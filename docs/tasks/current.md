@@ -6,7 +6,7 @@ Requisitos: plan común coordinado y `docs/migration-assessment.md`, corregidos 
 
 Candidato intermedio publicado en `main`: `31815471c6f7b247ca9d51178ebe9fce0b45fb10`. [CI GitHub aprobada](https://github.com/jgangini/aidp-ai_market-intelligence/actions/runs/42140400696). El remoto fue verificado PRIVATE. Este SHA cierra la extracción inicial, no todo el alcance solicitado.
 
-Candidato de código con lifecycle completo: `4f5133f8e918e7335da4a356735490fc72e1c55c`, publicado y confirmado como `origin/main`. [CI del candidato](https://github.com/jgangini/aidp-ai_market-intelligence/actions/runs/42142255290). Este documento de cierre puede tener un commit posterior sin cambios de código. No se ha publicado release final.
+Candidato base con lifecycle completo: `4f5133f8e918e7335da4a356735490fc72e1c55c`, publicado con [CI aprobada](https://github.com/jgangini/aidp-ai_market-intelligence/actions/runs/42142255290). Código final con guard de infraestructura de mantenimiento: `9755a54d8d018f5c42bba253d01f94059066683e`; las 1325 pruebas y la wheel final de abajo corresponden a ese árbol de código. Este cierre documental tiene un commit posterior sin cambios de código; la entrega del chat identifica HEAD y CI finales. No se ha publicado release final.
 
 Continuación implementada: update/redeploy y recuperación del candidato nativo anterior mediante journal durable y respaldos exactos, preservando identidades y sesiones. CLI y Deploy Studio exponen las acciones mediante el mismo paquete Python. La validación integrada se detalla abajo; aceptación OCI y gate de arquitectura siguen pendientes.
 
