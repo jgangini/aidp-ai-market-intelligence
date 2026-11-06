@@ -233,6 +233,11 @@
         "label": "Database admin password",
         "type": "password",
         "secret": true,
+        "generate_password": true,
+        "generate_password_when": {
+          "field": "autonomous_database_mode",
+          "equals": "new"
+        },
         "required": false,
         "transform": "none",
         "min_length": 12,

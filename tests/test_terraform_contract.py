@@ -66,6 +66,9 @@ def test_memory_password_uses_protected_hooks_without_aidp_state_credential():
     fields = {field["name"]: field for field in MANIFEST["form"]["fields"]}
     secret = fields['autonomous_database_admin_password']
     assert secret['secret'] and secret['type'] == 'password' and 'default' not in secret
+    assert secret['generate_password'] is True
+    assert secret['generate_password_when'] == {'field': 'autonomous_database_mode', 'equals': 'new'}
+    assert not fields['apify_token'].get('generate_password', False)
     for hook in ('preflight', 'post_apply'):
         assert 'autonomous_database_admin_password' in MANIFEST[hook]['secret_inputs']
     terraform = '\n'.join(p.read_text() for p in (ROOT/'terraform').glob('*.tf'))
