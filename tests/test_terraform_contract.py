@@ -38,6 +38,13 @@ def test_administrator_selection_is_required_without_self_granted_privileges():
     fields = {field["name"]: field for field in MANIFEST["form"]["fields"]}
     assert fields["admin_user_ocid"]["required"]
     assert fields["identity_domain_id"]["required"]
+    domain = fields["identity_domain_id"]
+    assert domain["type"] == "select"
+    assert domain["options_source"] == "oci_identity_domains"
+    assert "default" not in domain and "options" not in domain
+    assert re.fullmatch(domain["pattern"], "ocid1.domain.oc1..example")
+    for invalid in ("Default", "https://example.com", "ocid1.domain.oc1..example injected"):
+        assert re.fullmatch(domain["pattern"], invalid) is None
     assert fields["admin_user_ocid"]["options_source"] == "oci_aidp_administrators"
     assert "default" not in fields["admin_user_ocid"]
     assert "admin_password" not in fields and "admin_username" not in fields

@@ -6,7 +6,7 @@ La ficha visible se llama **AIDP AI Market Intelligence**; el ID técnico sigue 
 
 ## Contrato del candidato
 
-`terraform/deploy-studio.json` usa schema 1 y proyecto `aidp-ai-market-intelligence`. El campo `admin_user_ocid` usa el origen genérico `oci_aidp_administrators`, cuya integración del consumidor pertenece al coordinador. Preparar el manifiesto no acredita que la versión desplegada de Deploy Studio ya lo acepte: parser y runner reales requieren validación integrada antes de publicar la release.
+`terraform/deploy-studio.json` usa schema 1 y proyecto `aidp-ai-market-intelligence`. `identity_domain_id` es un selector obligatorio con `options_source=oci_identity_domains`, sin valor predeterminado; conserva el patrón OCID del dominio. El contrato solicitado al consumidor es listar dominios ACTIVE desde la home region descubierta, con OCID como valor y nombre más compartimento como etiqueta. Esa consulta y su prueba real pertenecen al coordinador; este producto no consulta OCI para poblar el formulario. Seleccionar el dominio no sustituye las comprobaciones de identidad y roles de los hooks. El campo `admin_user_ocid` usa el origen genérico `oci_aidp_administrators`. Preparar el manifiesto no acredita que la versión desplegada de Deploy Studio ya acepte ambos orígenes: parser y runner reales requieren validación integrada antes de publicar la release.
 
 El coordinador verificó el candidato `cff62ec` con Settings reales del consumidor: máximo de 250 archivos seleccionados y 10 MiB descomprimidos; el archivo GitHub admite hasta 100 MiB. Market selecciona 72 archivos, 859667 bytes. Ambos hooks importan desde ese árbol aislado en Python 3.12 sin red ni credenciales; esto comprueba empaquetado/importación, no instalación ni permisos OCI.
 

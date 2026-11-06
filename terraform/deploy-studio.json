@@ -73,8 +73,9 @@
       },
       {
         "name": "identity_domain_id",
-        "label": "Identity Domain OCID",
-        "type": "text",
+        "label": "Identity Domain",
+        "type": "select",
+        "options_source": "oci_identity_domains",
         "required": true,
         "pattern": "^ocid1\\.domain\\.[^\\s]+$"
       },
