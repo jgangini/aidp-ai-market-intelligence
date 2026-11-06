@@ -8,7 +8,9 @@ El operador necesita permisos para consultar identidad, región, modelo y recurs
 
 El runner requiere las dependencias de `uv.lock`. La compatibilidad del AI Compute y sus paquetes se verifica por separado; instalar dependencias de hooks no certifica el entorno del agente.
 
-La integración CTN debe admitir los grupos `aidp_platform`, `identity`, `artifacts`, `enterprise_ai`, `database`; los orígenes `oci_aidp_platforms`, `oci_identity_domains`, `oci_aidp_administrators`, `oci_genai_chat_models`; y `database_profile=new_or_existing` con `existing_database_wallet=none`. El selector de perfil transforma `26ai:DW` en versión `26ai` y workload `DW`.
+La configuración de infraestructura admite Terraform **1.5.7**, versión CLI de la línea 1.5.x de [OCI Resource Manager](https://docs.oracle.com/en-us/iaas/Content/ResourceManager/Reference/terraformversions.htm). CI ejecuta init/formato/validate con 1.5.7 y 1.15.6; las pruebas con `mock_provider` se ejecutan con 1.15.6. La versión moderna de pruebas no es un requisito del despliegue.
+
+La integración CTN debe admitir los grupos `aidp_platform`, `identity`, `artifacts`, `enterprise_ai`, `database`; los orígenes `oci_aidp_platforms`, `oci_aidp_workspaces`, `oci_identity_domains`, `oci_aidp_administrators`, `oci_genai_chat_models`, `oci_active_buckets`, `oci_autonomous_databases`; y `database_profile=new_or_existing` con `existing_database_wallet=none`. El selector de perfil transforma `26ai:DW` en versión `26ai` y workload `DW`.
 
 ## Crear o reutilizar servicios
 
@@ -30,7 +32,7 @@ Los recursos nuevos se vinculan al despliegue mediante `deployment_binding`, cal
 
 ### Instalación sobre AIDP existente
 
-Selecciona `aidp_mode=existing`, la plataforma de la lista y su compartment existente. Introduce la **clave nativa** del workspace: nombre visible y ruta no la sustituyen. Los hooks contrastan plataforma, compartment, workspace, identidad y permisos.
+Selecciona `aidp_mode=existing`, la plataforma de la lista y su compartment existente. Selecciona un workspace de la lista de la plataforma elegida: el formulario envía su **clave nativa**, no el nombre visible ni una ruta. Los hooks contrastan plataforma, compartment, workspace, identidad y permisos.
 
 Si AI ya está READY, elige la misma base asociada. El GET firmado debe devolver `vectorDbId` igual al OCID indicado; si el campo falta, la base difiere o el estado es inválido, la instalación se bloquea. No se reemplaza una asociación de memoria. Para una plataforma sin AI habilitado, el hook requiere ADMIN y habilita la asociación elegida con ETag e intención durable.
 
@@ -38,20 +40,23 @@ Governance y Market sobre la misma plataforma deben conservar esa asociación de
 
 ## Parámetros del formulario
 
+El formulario realiza instalación/Resume con `install` como valor predeterminado en Terraform y hooks. No ofrece Lifecycle ni UUID de mantenimiento. Update/redeploy/rollback se ejecutan mediante la CLI administrativa, con sus identificadores explícitos y validación de permisos.
+
 | Grupo / campos | Uso |
 | --- | --- |
 | Workbench: `aidp_mode` | Crear o seleccionar una plataforma ACTIVE. |
 | `existing_ai_data_platform_ocid`, `existing_workspace_key` | Referencias exactas requeridas en modo existing. |
-| `lifecycle_action` | install, update, redeploy o rollback. |
-| `operation_request_id`, `test_session_id` | UUID opcional de mantenimiento y sesión TEST existente; conservarlos al reanudar. |
+| `test_session_id` | Sesión TEST existente opcional para reanudar; conservarla al continuar. |
 | Identidad: `identity_domain_id`, `admin_user_ocid` | Dominio y propietario elegibles, revalidados server-side. |
-| Artefactos: `artifacts_bucket_mode`, `artifacts_bucket_name` | Crear bucket o reutilizar el nombre exacto. |
+| Artefactos: `artifacts_bucket_mode` | Create new bucket o Use existing bucket. |
+| `artifacts_bucket_name` | Nombre exacto para crear un bucket nuevo. |
+| `existing_artifacts_bucket_name` | Selector `oci_active_buckets` para reutilizar un bucket; preflight resuelve su nombre canónico para Terraform y los hooks. |
 | Enterprise AI: `agent_model_id` | Modelo OCI ACTIVE guardado en el runtime pausado. |
 | `apify_token` | Secreto para install/update/redeploy; rollback no lo utiliza. |
 | Memoria: `autonomous_database_mode` | Crear o reutilizar Autonomous. |
 | `autonomous_database_version`, `autonomous_database_workload` | Perfil 26ai DW. |
 | `autonomous_database_compute_count` | Entero entre 2 y 512 ECPU, por defecto 4; para base nueva. |
-| `existing_autonomous_database_ocid` | Base exacta para modo existing. |
+| `existing_autonomous_database_ocid` | Selector Existing Autonomous Database (`oci_autonomous_databases`); conserva OCID exacto y validación 26ai DW. |
 | `autonomous_database_admin_password` | ADMIN protegido para creación o habilitación AI; puede omitirse al reutilizar una asociación READY exacta. |
 
 Deploy Studio aporta tenancy, región, compartment y sufijo del despliegue. Preflight obtiene home region, endpoint del dominio y namespace desde OCI; no acepta un endpoint de identidad arbitrario del navegador.

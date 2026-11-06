@@ -43,7 +43,7 @@
         "options": [
           {
             "value": "new",
-            "label": "Create AIDP"
+            "label": "Create new AIDP"
           },
           {
             "value": "existing",
@@ -67,15 +67,16 @@
       },
       {
         "name": "existing_workspace_key",
-        "label": "Existing workspace key",
-        "type": "text",
+        "label": "Existing workspace",
+        "type": "select",
         "required": true,
         "pattern": "^[A-Za-z0-9_-]{1,128}$",
         "visible_when": {
           "field": "aidp_mode",
           "equals": "existing"
         },
-        "group": "aidp_platform"
+        "group": "aidp_platform",
+        "options_source": "oci_aidp_workspaces"
       },
       {
         "name": "identity_domain_id",
@@ -96,7 +97,7 @@
       },
       {
         "name": "agent_model_id",
-        "label": "OCI chat model",
+        "label": "Select Model",
         "type": "select",
         "required": true,
         "options_source": "oci_genai_chat_models",
@@ -104,14 +105,14 @@
       },
       {
         "name": "artifacts_bucket_mode",
-        "label": "Artifacts bucket",
+        "label": "Artifacts bucket mode",
         "type": "select",
         "required": true,
         "default": "new",
         "options": [
           {
             "value": "new",
-            "label": "Create bucket"
+            "label": "Create new bucket"
           },
           {
             "value": "existing",
@@ -122,15 +123,32 @@
       },
       {
         "name": "artifacts_bucket_name",
-        "label": "Exact artifacts bucket name",
+        "label": "New artifacts bucket name",
         "type": "text",
         "required": true,
         "pattern": "^[A-Za-z0-9_.-]{1,256}$",
-        "group": "artifacts"
+        "group": "artifacts",
+        "visible_when": {
+          "field": "artifacts_bucket_mode",
+          "equals": "new"
+        }
+      },
+      {
+        "name": "existing_artifacts_bucket_name",
+        "label": "Existing artifacts bucket",
+        "type": "select",
+        "required": true,
+        "options_source": "oci_active_buckets",
+        "pattern": "^[A-Za-z0-9_.-]{1,256}$",
+        "group": "artifacts",
+        "visible_when": {
+          "field": "artifacts_bucket_mode",
+          "equals": "existing"
+        }
       },
       {
         "name": "apify_token",
-        "label": "Apify token (required for install/update/redeploy; unused for rollback)",
+        "label": "Apify token",
         "type": "password",
         "required": false,
         "secret": true,
@@ -138,41 +156,6 @@
         "min_length": 20,
         "max_length": 512,
         "group": "enterprise_ai"
-      },
-      {
-        "name": "lifecycle_action",
-        "label": "Lifecycle action",
-        "type": "select",
-        "required": true,
-        "default": "install",
-        "options": [
-          {
-            "value": "install",
-            "label": "Install / resume"
-          },
-          {
-            "value": "update",
-            "label": "Update candidate"
-          },
-          {
-            "value": "redeploy",
-            "label": "Redeploy current candidate"
-          },
-          {
-            "value": "rollback",
-            "label": "Restore previous candidate"
-          }
-        ],
-        "group": "aidp_platform"
-      },
-      {
-        "name": "operation_request_id",
-        "label": "Operation UUID (optional; use a new UUID for another redeploy)",
-        "type": "text",
-        "required": false,
-        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-        "max_length": 36,
-        "group": "aidp_platform"
       },
       {
         "name": "test_session_id",
@@ -185,7 +168,7 @@
       },
       {
         "name": "autonomous_database_mode",
-        "label": "Agent Flow memory database",
+        "label": "Database mode",
         "type": "select",
         "required": true,
         "default": "new",
@@ -193,17 +176,17 @@
         "options": [
           {
             "value": "new",
-            "label": "Create Autonomous AI Lakehouse"
+            "label": "Create new database"
           },
           {
             "value": "existing",
-            "label": "Use existing Autonomous AI Lakehouse"
+            "label": "Use existing database"
           }
         ]
       },
       {
         "name": "autonomous_database_version",
-        "label": "Memory database profile",
+        "label": "Database profile",
         "type": "select",
         "required": true,
         "default": "26ai:DW",
@@ -234,19 +217,20 @@
       },
       {
         "name": "existing_autonomous_database_ocid",
-        "label": "Existing memory database OCID",
-        "type": "text",
+        "label": "Existing Autonomous Database",
+        "type": "select",
         "required": true,
         "group": "database",
         "pattern": "^ocid1\\.autonomousdatabase\\.[^\\s]+$",
         "visible_when": {
           "field": "autonomous_database_mode",
           "equals": "existing"
-        }
+        },
+        "options_source": "oci_autonomous_databases"
       },
       {
         "name": "autonomous_database_admin_password",
-        "label": "ADMIN password (required for new database or AI enablement)",
+        "label": "Database admin password",
         "type": "password",
         "secret": true,
         "required": false,
@@ -327,7 +311,8 @@
     "output_inputs": [
       "home_region",
       "identity_domain_url",
-      "objectstorage_namespace"
+      "objectstorage_namespace",
+      "artifacts_bucket_name"
     ],
     "runtime_fields": [
       {

@@ -2,6 +2,8 @@
 
 El [repositorio público](https://github.com/jgangini/aidp-ai_market-intelligence) distribuye candidatas inmutables para Deploy Studio. La versión del paquete Python es `0.1.0` y la del paquete AIDP es `2.0.1`. La [release disponible](https://github.com/jgangini/aidp-ai_market-intelligence/releases/tag/v0.1.0-rc.4) utiliza `v0.1.0-rc.4` y el commit exacto `95e5d08513f6c6f26f96e65d87ca6912e02166fd`.
 
+Resource Manager 1.5.x necesita la corrección de compatibilidad preparada para `v0.1.0-rc.5`, pendiente de publicación. rc.4 conserva su requisito `>= 1.7.0` y no se puede inicializar con Terraform 1.5.7. La [comprobación del runtime 1.5.7](evidence/terraform-1.5.7.md) detalla el alcance verificado.
+
 ## Archivos publicados
 
 | Archivo | Contenido |

@@ -1,6 +1,6 @@
 # Operación y recuperación
 
-Deploy Studio gestiona Terraform y llama a los hooks del paquete fijado por release/commit. La CLI opera una instalación existente. Ambas rutas conservan identidad, recibos y configuración; la investigación permanece pausada en TEST.
+Deploy Studio gestiona Terraform y llama a los hooks de instalación del paquete fijado por release/commit. Su formulario usa `install` por defecto y permite Resume; no expone Lifecycle ni UUID de mantenimiento. La CLI administrativa opera una instalación existente. Ambas rutas conservan identidad, recibos y configuración; la investigación permanece pausada en TEST.
 
 ## Estado y Resume
 
@@ -19,9 +19,9 @@ La observación del estado no instala recursos. `status` informa el modelo guard
 | `redeploy` | Redespliega el mismo paquete y configuración; un cambio de modelo requiere update. |
 | `rollback` | Restaura el candidato y configuración anteriores registrados. |
 
-El mantenimiento requiere instalación ready del mismo propietario, AIDP/workspace, agente, compute y credenciales. En una solicitud nueva de Deploy Studio se seleccionan **AIDP, bucket y base existing**. El stack original conserva la propiedad; no convertir sus selectores para simular una transferencia de state. Un despliegue PROD que comparta las fuentes bloquea su modificación.
+El mantenimiento mediante CLI requiere instalación ready del mismo propietario, AIDP/workspace, agente, compute y credenciales. El stack original conserva la propiedad; no convertir sus selectores para simular una transferencia de state. Un despliegue PROD que comparta las fuentes bloquea su modificación. El formulario de instalación no inicia una operación administrativa.
 
-Update/redeploy derivan una operación del despliegue durable, acción, hash del paquete y digest del modelo. `operation_request_id` permite otro UUID explícito para una nueva solicitud; conservarlo durante Resume. La sesión TEST se reutiliza y contrasta con agente, compute y endpoint. No se crean sesiones nuevas ni se reinician investigaciones, checkpoints o gasto para actualizar.
+La CLI exige `--operation-id` con UUID explícito para update/redeploy/rollback; conservarlo durante la reanudación. Los hooks internos conservan la derivación de operación por despliegue, acción, paquete y modelo para sus contratos administrativos; no se selecciona esa acción desde el formulario de instalación. La sesión TEST se reutiliza y contrasta con agente, compute y endpoint. No se crean sesiones nuevas ni se reinician investigaciones, checkpoints o gasto para actualizar.
 
 El journal guarda respaldos exactos, hashes y estados anterior/objetivo antes de sobrescribir archivos. Solo acepta bytes conocidos; drift ajeno bloquea. El refresh se registra antes de enviarse y una respuesta incierta se reconcilia en lugar de duplicarse. La nueva revisión debe estar ACTIVE y superar el probe antes de confirmar el recibo. Un fallo confirmado restaura el anterior.
 
@@ -70,5 +70,7 @@ El operador sigue firmando; el administrador no se suplanta. Se revalidan domini
 El state/plan de creación puede contener ADMIN pese a `sensitive=true`; mantenerlo en almacenamiento privado. Apify queda fuera de Terraform. Los hooks reciben contexto/secrets por archivos protegidos del runner y no instalan dependencias durante la ejecución.
 
 Para validación local utiliza `scripts/arch-postflight.ps1`: pruebas Python, package-check, protocolo Node, formato/validación/tests Terraform, límites y Sentrux. Requiere proveedores inicializados; no ejecuta apply ni descarga proveedores. Conserva la baseline existente: `arch-preflight.ps1` se detiene si ya existe para impedir sobrescribirla. Las pruebas con mocks no acreditan IAM, red, entorno del compute, asociación real ni persistencia de checkpoints.
+
+La infraestructura funciona con el contrato Terraform 1.5.7 de Resource Manager. El postflight local usa Terraform moderno para las pruebas con mocks; CI comprueba init/formato/validate también con 1.5.7. Mantén ambas comprobaciones al modificar precondiciones o funciones Terraform.
 
 No están implementados activar investigación por un comando público, publicación PROD, delete ni transferencia de state. La aceptación nativa, continuidad/aislamiento de memoria y calidad de investigación siguen siendo comprobaciones separadas.

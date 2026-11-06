@@ -31,7 +31,7 @@ Para una plataforma compartida con Governance, conserva su AIDP, workspace, buck
 
 ## Desarrollo local
 
-El entorno local validado utiliza Python 3.11 y `uv`; Node ejecuta las pruebas del protocolo de streaming. Terraform requiere los proveedores del lock inicializados.
+El entorno local validado utiliza Python 3.11 y `uv`; Node ejecuta las pruebas del protocolo de streaming. La infraestructura admite Terraform 1.5.7 de Resource Manager; las pruebas con mocks usan 1.15.6. Terraform requiere los proveedores del lock inicializados.
 
 ```powershell
 uv sync --locked
