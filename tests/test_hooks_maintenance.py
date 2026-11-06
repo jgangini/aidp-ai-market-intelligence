@@ -207,6 +207,7 @@ def test_rollback_preflight_skips_apify_model_but_requires_identity_and_roles(pr
     class Client:
         def __init__(self,settings): pass
         def _workspace(self): return {'key':'exact-key'}
+        def _read_installation(self,key): return {'phase':'ready','owner':USER}
         async def close(self): pass
     monkeypatch.setattr(hooks,'MarketAidpClient',Client)
     monkeypatch.setattr(hooks,'_platform',lambda c:None)
@@ -214,6 +215,7 @@ def test_rollback_preflight_skips_apify_model_but_requires_identity_and_roles(pr
     monkeypatch.setattr(hooks,'check_apify',apify)
     c=context('existing')
     c['inputs']['lifecycle_action']='rollback'
+    c['inputs']['artifacts_bucket_mode']='existing'
     if revoked:
         preflight_native.auth.side_effect=[None,AidpProvisionConflict('administrator revoked')]
         with pytest.raises(AidpProvisionConflict,match='revoked'):

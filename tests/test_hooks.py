@@ -144,6 +144,15 @@ def test_existing_aidp_cannot_be_bound_to_a_new_compartment(native):
         hooks.preflight(c, secrets(), 'config')
 
 
+@pytest.mark.parametrize('mode,bucket', [('new','new'),('new','existing'),('existing','new')])
+def test_fresh_maintenance_request_cannot_create_platform_or_bucket(monkeypatch, mode, bucket):
+    c = context(mode)
+    c['inputs'].update(lifecycle_action='update', artifacts_bucket_mode=bucket)
+    monkeypatch.setattr(hooks.oci.config, 'from_file', lambda *args: pytest.fail('Reject before credentials or native calls'))
+    with pytest.raises(AidpProvisionConflict, match='cannot create infrastructure'):
+        hooks.preflight(c, {}, 'config')
+
+
 @pytest.mark.parametrize('foreign_bucket', [False, True])
 def test_postapply_binds_exact_owned_bucket_before_install(monkeypatch, foreign_bucket):
     c = context()

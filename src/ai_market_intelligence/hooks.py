@@ -60,7 +60,12 @@ def _platform(client, *, newly_owned=False, deployment_binding=''):
 
 def preflight(context, secrets, config_file):
     fields = context['inputs']
-    recovery = fields.get('lifecycle_action') == 'rollback'
+    action = fields.get('lifecycle_action', 'install')
+    if action not in ('install', 'update', 'redeploy', 'rollback'):
+        raise ValueError('Unknown lifecycle action')
+    recovery = action == 'rollback'
+    if action != 'install' and (fields['aidp_mode'] != 'existing' or fields['artifacts_bucket_mode'] != 'existing'):
+        raise AidpProvisionConflict('A maintenance request must reference the existing AIDP and artifacts bucket; it cannot create infrastructure or change its original owner.')
     if fields['aidp_mode'] not in ('new', 'existing'):
         raise ValueError('Invalid deployment mode')
     config = oci.config.from_file(config_file, 'DEFAULT')
@@ -94,8 +99,12 @@ def preflight(context, secrets, config_file):
         client = MarketAidpClient(settings)
         try:
             _platform(client)
-            client._workspace()
+            workspace = client._workspace()
             verify_administrator(client)
+            if action != 'install':
+                saved = client._read_installation(workspace['key'])
+                if not saved or saved.get('phase') != 'ready' or saved.get('owner') != fields['admin_user_ocid']:
+                    raise AidpProvisionConflict('Maintenance requires an existing ready receipt bound to the selected administrator.')
         finally:
             asyncio.run(client.close())
     elif fields.get('existing_ai_data_platform_ocid') or fields.get('existing_workspace_key'):
