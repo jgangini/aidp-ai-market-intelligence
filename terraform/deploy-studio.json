@@ -1,61 +1,276 @@
 {
   "schema_version": 1,
   "project_id": "aidp-ai-market-intelligence",
-  "terraform": {"path": "terraform", "package_oci_credentials": false},
+  "terraform": {
+    "path": "terraform",
+    "package_oci_credentials": false
+  },
   "capabilities": {
-    "compartment_modes": ["new", "existing"],
+    "compartment_modes": [
+      "new",
+      "existing"
+    ],
     "default_compartment_name": "ai-market-intelligence",
     "database_profile": "none",
     "region_selection": "subscribed_compatible",
-    "regional_requirements": ["aidp", "genai_chat"]
+    "regional_requirements": [
+      "aidp",
+      "genai_chat"
+    ]
   },
   "presentation": {
     "title": "AI Market Intelligence",
     "summary": "Installs the evidence-based research agent in AIDP TEST with research paused. No portal VM or paid capture is started.",
-    "tags": ["AI Data Platform Workbench", "Market Intelligence", "Apify"],
+    "tags": [
+      "AI Data Platform Workbench",
+      "Market Intelligence",
+      "Apify"
+    ],
     "href": "https://github.com/jgangini/aidp-ai_market-intelligence"
   },
   "form": {
     "fields": [
-      {"name": "aidp_mode", "label": "AIDP destination", "type": "select", "required": true, "default": "new", "options": [{"value": "new", "label": "Create AIDP"}, {"value": "existing", "label": "Use existing AIDP"}]},
-      {"name": "existing_ai_data_platform_ocid", "label": "Existing AIDP OCID", "type": "text", "required": true, "pattern": "^ocid1\\.aidataplatform\\.[^\\s]+$", "visible_when": {"field": "aidp_mode", "equals": "existing"}},
-      {"name": "existing_workspace_key", "label": "Existing workspace key", "type": "text", "required": true, "pattern": "^[A-Za-z0-9_-]{1,128}$", "visible_when": {"field": "aidp_mode", "equals": "existing"}},
-      {"name": "identity_domain_id", "label": "Identity Domain OCID", "type": "text", "required": true, "pattern": "^ocid1\\.domain\\.[^\\s]+$"},
-      {"name": "admin_user_ocid", "label": "Administrator (new: assign; existing: verify roles)", "type": "select", "required": true, "options_source": "oci_aidp_administrators"},
-      {"name": "agent_model_id", "label": "OCI chat model", "type": "select", "required": true, "options_source": "oci_genai_chat_models"},
-      {"name": "artifacts_bucket_mode", "label": "Artifacts bucket", "type": "select", "required": true, "default": "new", "options": [{"value": "new", "label": "Create bucket"}, {"value": "existing", "label": "Use existing bucket"}]},
-      {"name": "artifacts_bucket_name", "label": "Exact artifacts bucket name", "type": "text", "required": true, "pattern": "^[A-Za-z0-9_.-]{1,256}$"},
-      {"name": "apify_token", "label": "Apify API token", "type": "password", "required": true, "secret": true, "transform": "none", "min_length": 20, "max_length": 512}
+      {
+        "name": "aidp_mode",
+        "label": "AIDP destination",
+        "type": "select",
+        "required": true,
+        "default": "new",
+        "options": [
+          {
+            "value": "new",
+            "label": "Create AIDP"
+          },
+          {
+            "value": "existing",
+            "label": "Use existing AIDP"
+          }
+        ]
+      },
+      {
+        "name": "existing_ai_data_platform_ocid",
+        "label": "Existing AIDP OCID",
+        "type": "text",
+        "required": true,
+        "pattern": "^ocid1\\.aidataplatform\\.[^\\s]+$",
+        "visible_when": {
+          "field": "aidp_mode",
+          "equals": "existing"
+        }
+      },
+      {
+        "name": "existing_workspace_key",
+        "label": "Existing workspace key",
+        "type": "text",
+        "required": true,
+        "pattern": "^[A-Za-z0-9_-]{1,128}$",
+        "visible_when": {
+          "field": "aidp_mode",
+          "equals": "existing"
+        }
+      },
+      {
+        "name": "identity_domain_id",
+        "label": "Identity Domain OCID",
+        "type": "text",
+        "required": true,
+        "pattern": "^ocid1\\.domain\\.[^\\s]+$"
+      },
+      {
+        "name": "admin_user_ocid",
+        "label": "Administrator (new: assign; existing: verify roles)",
+        "type": "select",
+        "required": true,
+        "options_source": "oci_aidp_administrators"
+      },
+      {
+        "name": "agent_model_id",
+        "label": "OCI chat model",
+        "type": "select",
+        "required": true,
+        "options_source": "oci_genai_chat_models"
+      },
+      {
+        "name": "artifacts_bucket_mode",
+        "label": "Artifacts bucket",
+        "type": "select",
+        "required": true,
+        "default": "new",
+        "options": [
+          {
+            "value": "new",
+            "label": "Create bucket"
+          },
+          {
+            "value": "existing",
+            "label": "Use existing bucket"
+          }
+        ]
+      },
+      {
+        "name": "artifacts_bucket_name",
+        "label": "Exact artifacts bucket name",
+        "type": "text",
+        "required": true,
+        "pattern": "^[A-Za-z0-9_.-]{1,256}$"
+      },
+      {
+        "name": "apify_token",
+        "label": "Apify token (required for install/update/redeploy; unused for rollback)",
+        "type": "password",
+        "required": false,
+        "secret": true,
+        "transform": "none",
+        "min_length": 20,
+        "max_length": 512
+      },
+      {
+        "name": "lifecycle_action",
+        "label": "Lifecycle action",
+        "type": "select",
+        "required": true,
+        "default": "install",
+        "options": [
+          {
+            "value": "install",
+            "label": "Install / resume"
+          },
+          {
+            "value": "update",
+            "label": "Update candidate"
+          },
+          {
+            "value": "redeploy",
+            "label": "Redeploy current candidate"
+          },
+          {
+            "value": "rollback",
+            "label": "Restore previous candidate"
+          }
+        ]
+      },
+      {
+        "name": "operation_request_id",
+        "label": "Operation UUID (optional; use a new UUID for another redeploy)",
+        "type": "text",
+        "required": false,
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        "max_length": 36
+      },
+      {
+        "name": "test_session_id",
+        "label": "Existing bound TEST session UUID (optional)",
+        "type": "text",
+        "required": false,
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        "max_length": 36
+      }
     ]
   },
   "run_steps": [
-    {"key": "queue", "label": "Queue"},
-    {"key": "credentials", "label": "Verify operator, administrator and Apify access"},
-    {"key": "compartment", "label": "Target compartment"},
-    {"key": "plan", "label": "Review owned and external resources"},
-    {"key": "apply", "label": "Provision selected resources"},
-    {"key": "application", "label": "Install paused TEST agent"},
-    {"key": "complete", "label": "Installation result"}
+    {
+      "key": "queue",
+      "label": "Queue"
+    },
+    {
+      "key": "credentials",
+      "label": "Verify operator, administrator and Apify access"
+    },
+    {
+      "key": "compartment",
+      "label": "Target compartment"
+    },
+    {
+      "key": "plan",
+      "label": "Review owned and external resources"
+    },
+    {
+      "key": "apply",
+      "label": "Provision selected resources"
+    },
+    {
+      "key": "application",
+      "label": "Install paused TEST agent"
+    },
+    {
+      "key": "complete",
+      "label": "Installation result"
+    }
   ],
-  "outputs": ["ai_data_platform_ocid", "workspace_key", "workspace_name", "artifacts_bucket_name", "objectstorage_namespace", "region", "home_region", "compartment_id", "identity_domain_id", "identity_domain_url", "admin_user_ocid", "agent_model_id", "owned_ai_data_platform", "owned_artifacts_bucket", "deployment_binding", "installation_status", "installation_phase", "operation_id", "research_enabled", "deployment_surface", "apify_execution_permission"],
+  "outputs": [
+    "ai_data_platform_ocid",
+    "workspace_key",
+    "workspace_name",
+    "artifacts_bucket_name",
+    "objectstorage_namespace",
+    "region",
+    "home_region",
+    "compartment_id",
+    "identity_domain_id",
+    "identity_domain_url",
+    "admin_user_ocid",
+    "agent_model_id",
+    "owned_ai_data_platform",
+    "owned_artifacts_bucket",
+    "deployment_binding",
+    "installation_status",
+    "installation_phase",
+    "operation_id",
+    "research_enabled",
+    "deployment_surface",
+    "apify_execution_permission",
+    "maintenance_action"
+  ],
   "artifacts": [],
   "preflight": {
     "entrypoint": "terraform/hooks/preflight.py",
     "timeout_seconds": 300,
     "requires_oci_credentials": true,
-    "secret_inputs": ["apify_token"],
-    "output_inputs": ["home_region", "identity_domain_url", "objectstorage_namespace"],
+    "secret_inputs": [
+      "apify_token"
+    ],
+    "output_inputs": [
+      "home_region",
+      "identity_domain_url",
+      "objectstorage_namespace"
+    ],
     "runtime_fields": [
-      {"name": "home_region", "label": "Tenancy home region", "type": "text", "required": true, "pattern": "^[a-z]{2}-[a-z0-9-]+-[0-9]+$"},
-      {"name": "identity_domain_url", "label": "Verified Identity Domain endpoint", "type": "text", "required": true, "pattern": "^https://[A-Za-z0-9.-]+/?$"},
-      {"name": "objectstorage_namespace", "label": "Verified Object Storage namespace", "type": "text", "required": true, "pattern": "^[A-Za-z0-9_-]{1,256}$"}
+      {
+        "name": "home_region",
+        "label": "Tenancy home region",
+        "type": "text",
+        "required": true,
+        "pattern": "^[a-z]{2}-[a-z0-9-]+-[0-9]+$"
+      },
+      {
+        "name": "identity_domain_url",
+        "label": "Verified Identity Domain endpoint",
+        "type": "text",
+        "required": true,
+        "pattern": "^https://[A-Za-z0-9.-]+/?$"
+      },
+      {
+        "name": "objectstorage_namespace",
+        "label": "Verified Object Storage namespace",
+        "type": "text",
+        "required": true,
+        "pattern": "^[A-Za-z0-9_-]{1,256}$"
+      }
     ]
   },
   "post_apply": {
     "entrypoint": "terraform/hooks/post_apply.py",
     "timeout_seconds": 3600,
     "requires_oci_credentials": true,
-    "include_paths": ["src", "aidp", "package", "pyproject.toml", "uv.lock"],
-    "secret_inputs": ["apify_token"]
+    "include_paths": [
+      "src",
+      "aidp",
+      "package",
+      "pyproject.toml",
+      "uv.lock"
+    ],
+    "secret_inputs": [
+      "apify_token"
+    ]
   }
 }

@@ -3,6 +3,7 @@ import argparse
 import asyncio
 import json
 from pathlib import Path
+from uuid import UUID
 from pydantic import SecretStr
 from .package import load_package
 from .installation.agent_package import agent_package
@@ -18,7 +19,7 @@ def package_check():
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['package-check', 'status', 'install', 'release-lock'])
+    parser.add_argument('command', choices=['package-check', 'status', 'install', 'update', 'redeploy', 'rollback', 'release-lock'])
     parser.add_argument('--settings', type=Path)
     parser.add_argument('--operation-id')
     parser.add_argument('--token-file', type=Path, help='Private file containing the Apify token; never passed on the command line')
@@ -34,6 +35,14 @@ def main(argv=None):
         parser.error('--settings is required')
     if args.command != 'status' and not args.apply:
         parser.error('--apply is required for this mutation')
+    if args.command in ('install', 'update', 'redeploy', 'rollback'):
+        try:
+            if str(UUID(args.operation_id)) != args.operation_id:
+                raise ValueError('Noncanonical UUID')
+            if args.test_session_id and str(UUID(args.test_session_id)) != args.test_session_id:
+                raise ValueError('Noncanonical UUID')
+        except (TypeError, ValueError, AttributeError):
+            parser.error('Canonical operation and TEST session UUIDs are required')
     from .settings import Settings
     from .client import MarketAidpClient
     from .authorization import verify_administrator
@@ -54,14 +63,22 @@ def main(argv=None):
         else:
             if not args.operation_id:
                 parser.error('--operation-id is required')
-            token = SecretStr(args.token_file.read_text(encoding='utf-8').strip()) if args.token_file else None
-            if token is None:
-                parser.error('--token-file is required for the read-only Apify preflight; existing secrets are never exported')
-            from .apify_preflight import check_apify
-            if token and not check_apify(token)['reads_verified']:
-                raise ValueError('Apify read preflight failed; no installation was started')
-            result = install(client, args.operation_id, token=token, test_session_id=args.test_session_id)
+            token = None
+            if args.command != 'rollback':
+                token = SecretStr(args.token_file.read_text(encoding='utf-8').strip()) if args.token_file else None
+                if token is None:
+                    parser.error('--token-file is required for the read-only Apify preflight; existing secrets are never exported')
+                from .apify_preflight import check_apify
+                if not check_apify(token)['reads_verified']:
+                    raise ValueError('Apify read preflight failed; no installation was started')
+            if args.command == 'install':
+                result = install(client, args.operation_id, token=token, test_session_id=args.test_session_id)
+            else:
+                from .maintenance import maintain
+                result = maintain(client, args.command, args.operation_id, test_session_id=args.test_session_id)
         print(json.dumps(result))
+        if args.command in ('update', 'redeploy') and result.get('status') == 'rolled_back':
+            return 1
         return 0
     except Exception:
         # External failures and validation exceptions can contain secret-bearing input.

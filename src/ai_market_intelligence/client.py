@@ -33,7 +33,13 @@ def public_status(manifest=None):
     pack = load_package(MODULE_ID, require_available=False)
     phases = installation_phases(state)
     suffix = state.get('resources', {}).get('apify_token_suffix', '')
-    return {'module_id': MODULE_ID, 'display_name': 'AI Market Intelligence', 'deployment_surface': 'TEST', 'status': state.get('status', 'not_installed'), 'installed': state.get('phase') == 'ready', 'phase': state.get('phase', 'not_installed'), 'enabled': False, 'operation_id': state.get('operation_id'), 'operation_type': 'install', 'message': state.get('message', ''), 'bundled_version': pack.pack_version, 'target_pack_sha256': state.get('pack_sha256'), 'bundled_pack_sha256': pack.pack_sha256, 'reuse_existing': state.get('reuse_existing', True), 'completed_phases': list(phases[:phases.index(state['phase'])]) if state.get('phase') in phases else [], 'apify_credential_status': 'configured' if state.get('resources', {}).get('apify_credential_key') else 'missing', 'apify_credential_owned_by_operation': bool(state.get('resources', {}).get('apify_credential_key')), 'apify_token_suffix': suffix if state.get('resources', {}).get('apify_credential_key') and isinstance(suffix, str) and re.fullmatch('[A-Za-z0-9]{4}', suffix) else '', 'test_sessions': state.get('test_sessions', [])}
+    result = {'module_id': MODULE_ID, 'display_name': 'AI Market Intelligence', 'deployment_surface': 'TEST', 'status': state.get('status', 'not_installed'), 'installed': state.get('phase') == 'ready', 'phase': state.get('phase', 'not_installed'), 'enabled': False, 'operation_id': state.get('operation_id'), 'operation_type': 'install', 'message': state.get('message', ''), 'bundled_version': pack.pack_version, 'target_pack_sha256': state.get('pack_sha256'), 'bundled_pack_sha256': pack.pack_sha256, 'reuse_existing': state.get('reuse_existing', True), 'completed_phases': list(phases[:phases.index(state['phase'])]) if state.get('phase') in phases else [], 'apify_credential_status': 'configured' if state.get('resources', {}).get('apify_credential_key') else 'missing', 'apify_credential_owned_by_operation': bool(state.get('resources', {}).get('apify_credential_key')), 'apify_token_suffix': suffix if state.get('resources', {}).get('apify_credential_key') and isinstance(suffix, str) and re.fullmatch('[A-Za-z0-9]{4}', suffix) else '', 'test_sessions': state.get('test_sessions', [])}
+    maintenance = state.get('maintenance')
+    if isinstance(maintenance, dict):
+        result['maintenance'] = {key: maintenance[key] for key in ('operation_id', 'action', 'phase', 'status') if key in maintenance}
+        if maintenance.get('status') == 'running':
+            result.update(status='updating', phase=maintenance.get('phase', 'maintenance'))
+    return result
 
 class MarketProbeStream(MarketGatewayStream):
 
@@ -140,6 +146,8 @@ class MarketAidpClient(AidpClient):
             self._ensure_workspace_layout(workspace, ('/Workspace/.control', '/Workspace/.control/modules', CONTROL_ROOT, '/Workspace/.artifact', self.installation_root, self.installation_root + '/agents', AGENT_ROOT))
             state = {'installer_version': 2, 'module_id': MODULE_ID, 'workspace': workspace, 'publication_root': self.installation_root, 'operation_id': operation, 'owner': user, 'reuse_existing': reuse, 'phase': 'verify', 'status': 'installing', 'resources': {}, 'pack_sha256': load_package(MODULE_ID, require_available=False).pack_sha256}
             self._save(state)
+        if (state.get('maintenance') or {}).get('status') == 'running':
+            raise AidpProvisionConflict('Resume the recorded maintenance operation; installation cannot overwrite its candidate.')
         if state['operation_id'] != operation or state['owner'] != user or state['reuse_existing'] is not reuse:
             raise AidpProvisionConflict('Resume the saved installation with the same administrator and settings.')
         self._assert_candidate(state)
@@ -427,6 +435,8 @@ class MarketAidpClient(AidpClient):
         def observe():
             workspace = str(self._workspace()['key'])
             state = self._read_installation(workspace)
+            if state and (state.get('maintenance') or {}).get('status') == 'running':
+                raise AidpProvisionConflict('The maintenance candidate is not yet verified. Resume its recorded operation.')
             if not state or state['phase'] != 'ready':
                 raise AidpProvisionConflict('Complete the current TEST installation before copying its endpoint.')
             client = MarketPlaygroundClient(self.settings)

@@ -2,7 +2,7 @@
 
 Agente de investigación con evidencia para Oracle AIDP, extraído de Starter Kits `3c82617fd298933995e954955841007253cc0985`. Producto independiente: paquete Python CLI/hooks, fuentes AIDP y Terraform. Se instala desde Deploy Studio; no contiene portal, API HTTP, frontend ni VM administrativa.
 
-El candidato instala **TEST con investigación pausada**. No inicia inferencia, capturas Apify ni horarios. Instalación, conectores y aceptación semántica son comprobaciones diferentes; no hay publicación PROD implementada.
+El candidato instala **TEST con investigación pausada**. Update/redeploy conservan identidades y respaldan el candidato previo para recuperación. No inicia inferencia, capturas Apify ni horarios. Instalación, conectores y aceptación semántica son comprobaciones diferentes; no hay publicación PROD implementada.
 
 ```powershell
 uv sync --locked

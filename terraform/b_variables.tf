@@ -109,3 +109,29 @@ variable "artifacts_bucket_name" {
     error_message = "artifacts_bucket_name must be a valid explicit bucket name."
   }
 }
+
+variable "lifecycle_action" {
+  type        = string
+  default     = "install"
+  description = "Hook action; does not replace infrastructure."
+  validation {
+    condition     = contains(["install", "update", "redeploy", "rollback"], var.lifecycle_action)
+    error_message = "Choose an explicit supported lifecycle action."
+  }
+}
+
+variable "operation_request_id" {
+  type        = string
+  default     = ""
+  description = "Optional stable UUID for a new maintenance request; never a credential."
+  validation {
+    condition     = var.operation_request_id == "" || can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", var.operation_request_id))
+    error_message = "A canonical request UUID is required."
+  }
+}
+
+variable "test_session_id" {
+  type        = string
+  default     = ""
+  description = "Optional existing bound TEST session; no session reset."
+}

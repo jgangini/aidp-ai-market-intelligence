@@ -6,7 +6,7 @@ import re
 import hashlib
 from pathlib import Path
 from types import SimpleNamespace
-from uuid import uuid5, NAMESPACE_URL
+from uuid import UUID, uuid5, NAMESPACE_URL
 import oci
 from pydantic import SecretStr
 from .apify_preflight import check_apify
@@ -60,6 +60,7 @@ def _platform(client, *, newly_owned=False, deployment_binding=''):
 
 def preflight(context, secrets, config_file):
     fields = context['inputs']
+    recovery = fields.get('lifecycle_action') == 'rollback'
     if fields['aidp_mode'] not in ('new', 'existing'):
         raise ValueError('Invalid deployment mode')
     config = oci.config.from_file(config_file, 'DEFAULT')
@@ -101,16 +102,25 @@ def preflight(context, secrets, config_file):
         raise ValueError('New platform cannot carry an existing destination selection')
     if fields['artifacts_bucket_mode'] == 'existing':
         storage.head_bucket(namespace, fields['artifacts_bucket_name'])
+    events = [{'name': 'Identity', 'status': 'passed',
+               'message': 'Active selected administrator verified; new AIDP roles are assigned and revalidated after bootstrap.'}]
+    if recovery:
+        events.append({'name': 'Recovery', 'status': 'warning',
+            'message': 'Rollback restores recorded paused artifacts only; no Apify or model call is required or started.'})
+        return {'inputs': {'home_region': home[0], 'identity_domain_url': domain_url,
+                           'objectstorage_namespace': namespace}, 'events': events}
     model_config = {**config, 'region': context['region']}
     model = oci.generative_ai.GenerativeAiClient(model_config, signer=signer).get_model(fields['agent_model_id']).data
     if model.lifecycle_state != 'ACTIVE':
         raise AidpProvisionConflict('Selected OCI model is not ACTIVE.')
     apify = check_apify(_token(secrets))
-    events = [{'name': 'Identity', 'status': 'passed',
-               'message': 'Active selected administrator verified; new AIDP roles are assigned and revalidated after bootstrap.'}]
     events.append({'name': 'Apify account', 'status': 'passed' if apify['account']['status'] == 'authenticated' else 'failed',
                    'message': apify['account'].get('message', 'Authenticated account read verified.')})
     for actor in apify['actors']:
+        if actor['status'] == 'suspended':
+            events.append({'name': 'Apify ' + actor['profile'], 'status': 'warning',
+                'message': 'Profile remains suspended; no actor access or execution was verified for it.'})
+            continue
         passed = actor['status'] in ('visible', 'suspended')
         events.append({'name': 'Apify ' + actor['profile'], 'status': 'passed' if passed else 'failed',
             'message': ('Actor/build visibility checked; execution permission and entitlement not verified.' if passed
@@ -127,9 +137,25 @@ def operation_id(deployment_id):
     return str(uuid5(NAMESPACE_URL, 'https://github.com/jgangini/aidp-ai_market-intelligence/deployments/' + deployment_id))
 
 
+def maintenance_operation_id(context, action, package_sha256):
+    operation_id(context['deployment_id'])
+    if action not in ('update', 'redeploy'):
+        raise ValueError('Rollback requires the exact recorded maintenance operation')
+    requested = context['inputs'].get('operation_request_id', '')
+    if requested:
+        if str(UUID(requested)) != requested:
+            raise ValueError('A canonical operation UUID is required')
+        return requested
+    return str(uuid5(NAMESPACE_URL, 'https://github.com/jgangini/aidp-ai_market-intelligence/deployments/'
+        + context['deployment_id'] + '/' + action + '/' + package_sha256))
+
+
 def post_apply(context, secrets, config_file):
     outputs = _outputs(context)
     operation = operation_id(context['deployment_id'])
+    action = context['inputs'].get('lifecycle_action', 'install')
+    if action not in ('install', 'update', 'redeploy', 'rollback'):
+        raise ValueError('Unknown lifecycle action')
     if (outputs.get('region') != context['region']
             or outputs.get('owned_ai_data_platform') is not (context['inputs']['aidp_mode'] == 'new')
             or outputs.get('owned_artifacts_bucket') is not (context['inputs']['artifacts_bucket_mode'] == 'new')):
@@ -153,17 +179,36 @@ def post_apply(context, secrets, config_file):
         if outputs.get('owned_artifacts_bucket') is True and (
                 bucket.compartment_id != settings.compartment_id or (bucket.freeform_tags or {}).get('deployment_binding') != expected_binding):
             raise AidpProvisionConflict('New artifacts bucket is not owned by this deployment.')
-        apify = check_apify(_token(secrets))
-        if not apify['reads_verified']:
-            raise AidpProvisionConflict('Apify account/actor/build reads failed; no installation was started.')
+        if action != 'rollback':
+            apify = check_apify(_token(secrets))
+            if not apify['reads_verified']:
+                raise AidpProvisionConflict('Apify account/actor/build reads failed; no installation was started.')
         # The default workspace of a new platform is matched exactly once, then bound by key.
         workspace = client._workspace()
         client.settings = settings.model_copy(update={'aidp_workspace_key': workspace['key']})
-        status = install(client, operation, token=_token(secrets), new_platform=new)
+        session = context['inputs'].get('test_session_id') or None
+        if action == 'install':
+            status = install(client, operation, token=_token(secrets), new_platform=new, test_session_id=session)
+        else:
+            from .maintenance import maintain
+            from .package import load_package
+            if action == 'rollback':
+                saved = client._read_installation(workspace['key'])
+                recorded = (saved or {}).get('maintenance', {}).get('operation_id')
+                operation = context['inputs'].get('operation_request_id') or recorded
+                if not operation or operation != recorded:
+                    raise AidpProvisionConflict('Rollback must reference the recorded maintenance operation.')
+            else:
+                operation = maintenance_operation_id(context, action,
+                    load_package('ai_market_intelligence', require_available=False).pack_sha256)
+            status = maintain(client, action, operation, test_session_id=session)
+        recovered_failure = status['status'] == 'rolled_back' and action != 'rollback'
         return {'outputs': {'installation_status': status['status'], 'installation_phase': status['phase'],
             'operation_id': status['operation_id'], 'deployment_surface': 'TEST', 'research_enabled': False,
-            'apify_execution_permission': 'not_verified', 'workspace_key': workspace['key']},
-            'events': [{'level': 'success', 'message': 'Exact Market candidate installed in TEST with research paused.'}]}
+            'apify_execution_permission': 'not_verified', 'workspace_key': workspace['key'], 'maintenance_action': action},
+            'events': [{'level': 'error' if recovered_failure else 'success',
+                'message': ('Candidate update failed; the previous TEST candidate was restored and verified.' if recovered_failure
+                            else 'Market lifecycle operation verified in TEST with research paused.')}]}
     finally:
         asyncio.run(client.close())
 
@@ -179,7 +224,7 @@ def run_hook(kind):
         action = preflight if kind == 'preflight' else post_apply
         result = action(context, secrets, os.environ['DEPLOY_STUDIO_OCI_CONFIG'])
         destination.write_text(json.dumps(result), encoding='utf-8')
-        return 0
+        return 1 if any(event.get('level') == 'error' for event in result.get('events', [])) else 0
     except Exception:
         # SDK and validation errors can contain request/credential bodies. Fail closed without echo.
         if kind == 'preflight':
