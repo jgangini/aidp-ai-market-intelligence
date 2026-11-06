@@ -1,0 +1,3 @@
+* text=auto eol=lf
+aidp/** -text whitespace=-blank-at-eof
+package/lab.json -text

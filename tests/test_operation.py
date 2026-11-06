@@ -1,0 +1,110 @@
+import json
+from types import SimpleNamespace as NS
+
+import pytest
+
+from ai_market_intelligence.errors import AidpProvisionConflict
+from ai_market_intelligence.operation import installation_lock, release_lock
+
+
+OP = '11111111-1111-4111-8111-111111111111'
+
+
+class StorageError(Exception):
+    def __init__(self, status):
+        self.status = status
+
+
+class ConditionalStorage:
+    def __init__(self, *, missing_etag=False):
+        self.objects = {}
+        self.deleted = []
+        self.missing_etag = missing_etag
+
+    def put_object(self, namespace, bucket, name, body, **conditions):
+        assert conditions['if_none_match'] == '*'
+        if name in self.objects:
+            raise StorageError(412)
+        self.objects[name] = (body, 'current-etag')
+        return NS(headers={} if self.missing_etag else {'etag': 'current-etag'})
+
+    def delete_object(self, namespace, bucket, name, **conditions):
+        if self.objects[name][1] != conditions['if_match']:
+            raise StorageError(412)
+        self.deleted.append((name, conditions['if_match']))
+        del self.objects[name]
+
+
+def lock_client(storage):
+    return NS(settings=NS(aidp_platform_id='ocid1.aidataplatform.oc1..fixture',
+                          objectstorage_namespace='namespace', artifacts_bucket_name='artifacts'),
+              _workspace=lambda: {'key': 'workspace'}, object_storage=storage,
+              _oci=NS(exceptions=NS(ServiceError=StorageError)))
+
+
+def test_concurrent_installer_cannot_enter_or_remove_first_holders_lock():
+    storage = ConditionalStorage()
+    client = lock_client(storage)
+    with installation_lock(client, OP):
+        saved = next(iter(storage.objects.values()))
+        assert json.loads(saved[0])['operation_id'] == OP
+        with pytest.raises(AidpProvisionConflict, match='lock exists'):
+            with installation_lock(client, OP):
+                pytest.fail('Concurrent execution entered the protected installer')
+        assert storage.objects and not storage.deleted
+    assert not storage.objects and storage.deleted[0][1] == 'current-etag'
+
+
+def test_uncertain_lock_write_preserves_object_and_blocks_retry():
+    storage = ConditionalStorage(missing_etag=True)
+    client = lock_client(storage)
+    with pytest.raises(AidpProvisionConflict, match='uncertain'):
+        with installation_lock(client, OP):
+            pytest.fail('An unconfirmed lock must not authorize installation')
+    assert storage.objects and not storage.deleted
+    with pytest.raises(AidpProvisionConflict, match='lock exists'):
+        with installation_lock(client, OP):
+            pytest.fail('Blind retry entered an uncertain lock')
+
+
+def test_timeout_after_lock_write_preserves_uncertain_lease():
+    storage = ConditionalStorage()
+    original_put = storage.put_object
+    def timeout_after_commit(*args, **kwargs):
+        original_put(*args, **kwargs)
+        raise TimeoutError('response lost after conditional write')
+    storage.put_object = timeout_after_commit
+    with pytest.raises(TimeoutError):
+        with installation_lock(lock_client(storage), OP):
+            pytest.fail('Lost write response cannot authorize the installer')
+    assert storage.objects and not storage.deleted
+    storage.put_object = original_put
+    with pytest.raises(AidpProvisionConflict, match='lock exists'):
+        with installation_lock(lock_client(storage), OP):
+            pytest.fail('A timeout cannot justify another holder')
+
+
+def test_release_uses_exact_etag_and_stale_holder_cannot_delete_replacement():
+    storage = ConditionalStorage()
+    client = lock_client(storage)
+    with installation_lock(client, OP):
+        with pytest.raises(StorageError) as failure:
+            release_lock(client, expected_etag='stale-etag')
+        assert failure.value.status == 412 and storage.objects
+    assert len(storage.deleted) == 1
+
+
+def test_normal_failure_releases_only_confirmed_lease():
+    storage = ConditionalStorage()
+    with pytest.raises(RuntimeError, match='installer failed'):
+        with installation_lock(lock_client(storage), OP):
+            raise RuntimeError('installer failed')
+    assert not storage.objects and storage.deleted[0][1] == 'current-etag'
+
+
+@pytest.mark.parametrize('etag', ['', 'x\n', 'x\x00'])
+def test_explicit_recovery_rejects_empty_or_unsafe_etag(etag):
+    storage = ConditionalStorage()
+    with pytest.raises(ValueError, match='ETag'):
+        release_lock(lock_client(storage), expected_etag=etag)
+    assert not storage.deleted

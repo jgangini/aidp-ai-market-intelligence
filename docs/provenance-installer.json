@@ -1,0 +1,64 @@
+{
+  "commit": "3c82617fd298933995e954955841007253cc0985",
+  "files": [
+    {
+      "source": "apps/backend/app/modules/ai_market_intelligence/client.py",
+      "target": "src/ai_market_intelligence/client.py",
+      "source_sha256": "2d9266ecb49fe7bd0e9dc0534370cf5c6a1e4e144f6efd0bd46414caf326341f"
+    },
+    {
+      "source": "apps/backend/app/modules/ai_market_intelligence/installation/compute.py",
+      "target": "src/ai_market_intelligence/installation/compute.py",
+      "source_sha256": "58e79bf8d6a2dd1d67e05231fff128231cebcb3fd99ab643649002d529ae47fa"
+    },
+    {
+      "source": "apps/backend/app/modules/ai_market_intelligence/installation/credentials.py",
+      "target": "src/ai_market_intelligence/installation/credentials.py",
+      "source_sha256": "83110357b13081c9d0a3a0f3eac331623538e9de42b0dd41dace05be53861e05"
+    },
+    {
+      "source": "apps/backend/app/modules/ai_market_intelligence/installation/playground.py",
+      "target": "src/ai_market_intelligence/installation/playground.py",
+      "source_sha256": "bfcd4f052ff1df9b22606556667e4cf68405408373eed5b0f02be24247d62b31"
+    }
+  ],
+  "transport_source": "apps/backend/app/services/oci/aidp.py",
+  "transport_methods": [
+    "__init__",
+    "_agent_deployments",
+    "_agents",
+    "_content_matches",
+    "_credential_payload",
+    "_ensure_folder",
+    "_ensure_governance_bucket",
+    "_ensure_governance_credential",
+    "_ensure_role_permission",
+    "_ensure_workspace_layout",
+    "_list",
+    "_page_items",
+    "_permission_grantee",
+    "_permission_values",
+    "_request",
+    "_request_error_message",
+    "_request_headers",
+    "_require_operational_state",
+    "_resource_name",
+    "_response_body",
+    "_role",
+    "_role_permission_matches",
+    "_role_principal_ocids",
+    "_role_user_ocids",
+    "_safe_diagnostic_fragment",
+    "_shared_oci_credential",
+    "_upload_file",
+    "_workspace",
+    "_workspace_json",
+    "_workspace_object",
+    "_workspace_object_exists",
+    "_workspace_object_type",
+    "close",
+    "is_platform_admin",
+    "platform_admin_principals",
+    "platform_admin_user_ocids"
+  ]
+}

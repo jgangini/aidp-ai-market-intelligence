@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aidp-ai-market-intelligence"
+version = "0.1.0"
+description = "Independent AIDP Market Intelligence TEST installer and portable agent"
+requires-python = ">=3.11,<3.13"
+dependencies = ["oci==2.189.0", "pydantic>=2.11,<3", "httpx==0.28.1", "pypdf==6.20.1", "langgraph==0.6.7", "tzdata; sys_platform == 'win32'"]
+
+[project.scripts]
+aidp-market = "ai_market_intelligence.cli:main"
+
+[dependency-groups]
+dev = ["pytest==8.4.1", "jsonschema==4.26.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["src", "."]
