@@ -1,8 +1,10 @@
 # Distribución y verificación
 
-El [repositorio público](https://github.com/jgangini/aidp-ai_market-intelligence) distribuye candidatas inmutables para Deploy Studio. La versión del paquete Python es `0.1.0` y la del paquete AIDP es `2.0.1`. La [release disponible](https://github.com/jgangini/aidp-ai_market-intelligence/releases/tag/v0.1.0-rc.4) utiliza `v0.1.0-rc.4` y el commit exacto `95e5d08513f6c6f26f96e65d87ca6912e02166fd`.
+El [repositorio público](https://github.com/jgangini/aidp-ai_market-intelligence) distribuye candidatas inmutables para Deploy Studio. La versión del paquete Python es `0.1.0` y la del paquete AIDP es `2.0.1`. La nueva [candidata](https://github.com/jgangini/aidp-ai_market-intelligence/releases/tag/v0.1.0-rc.5) utiliza `v0.1.0-rc.5`; su manifiesto de release identifica el commit exacto y la CI de ese SHA. La [release anterior rc.4](https://github.com/jgangini/aidp-ai_market-intelligence/releases/tag/v0.1.0-rc.4) conserva el commit `95e5d08513f6c6f26f96e65d87ca6912e02166fd`.
 
-Resource Manager 1.5.x necesita la corrección de compatibilidad preparada para `v0.1.0-rc.5`, pendiente de publicación. rc.4 conserva su requisito `>= 1.7.0` y no se puede inicializar con Terraform 1.5.7. La [comprobación del runtime 1.5.7](evidence/terraform-1.5.7.md) detalla el alcance verificado.
+Resource Manager 1.5.x necesita la corrección de compatibilidad de `v0.1.0-rc.5`. rc.4 conserva su requisito `>= 1.7.0` y no se puede inicializar con Terraform 1.5.7. La [comprobación del runtime 1.5.7](evidence/terraform-1.5.7.md) detalla el alcance verificado.
+
+La misma candidata `v0.1.0-rc.5` incorpora el [formulario declarativo schema 2](deployment.md#formulario-declarativo-de-deploy-studio). Requiere el motor CTN que valida y renderiza `form.groups` directamente; las releases anteriores siguen inmutables con schema 1 y ese motor las rechaza. El manifiesto y `SHA256SUMS` de la nueva release identifican su commit y sus cinco assets. La publicación de esta candidata no acredita aceptación OCI ni revisión Browser.
 
 ## Archivos publicados
 
@@ -27,13 +29,13 @@ El consumidor admite hasta 250 archivos seleccionados, 10 MiB extraídos y 100 M
 En una carpeta nueva, descarga los cinco assets de la misma release. Comprueba los hashes de `SHA256SUMS` y los tamaños/hashes del manifiesto. Verifica que tag, commit, project_id y versiones correspondan al paquete que instalarás. No mezclar un ZIP de fuente con una wheel o manifiesto de otra release.
 
 ```powershell
-gh release download v0.1.0-rc.4 --repo jgangini/aidp-ai_market-intelligence --dir .local/release-download
+gh release download v0.1.0-rc.5 --repo jgangini/aidp-ai_market-intelligence --dir .local/release-download
 ```
 
-Los assets conservan sus condiciones originales de publicación, incluida la marca histórica `publication_requirements.private=true`; el repositorio y sus descargas son actualmente públicos. Eso no cambia la protección de credenciales, state o recibos operativos.
+Los assets de rc.1–rc.4 conservan sus condiciones originales de publicación, incluida la marca histórica `publication_requirements.private=true`; el repositorio y sus descargas son actualmente públicos. rc.5 declara esa visibilidad pública. Eso no cambia la protección de credenciales, state o recibos operativos.
 
 ## Alcance de la candidata
 
 La fuente implementa instalación TEST pausada, update/redeploy/rollback y enlace protegido de memoria. Falta aceptar nativamente permisos, el entorno del runner/compute, `vectorDbId` y continuidad/aislamiento de checkpoints. La memoria READY y el probe pausado no prueban inferencia ni calidad de respuestas. El gate Sentrux contra la baseline inicial permanece fallido; no representa una aprobación arquitectónica.
 
-Consulta [despliegue](deployment.md) para instalar y [operación](operations.md) para Resume/recuperación. Los números de pruebas, hashes y registros de publicación se conservan como [evidencia separada](evidence/release-rc4-validation.md); la [auditoría de exposición pública](evidence/publication-audit.md) documenta la revisión de fuente, historial y assets.
+Consulta [despliegue](deployment.md) para instalar y [operación](operations.md) para Resume/recuperación. El manifiesto publicado de rc.5 contiene sus checks, hashes y CI; los registros anteriores se conservan como [evidencia de rc.4](evidence/release-rc4-validation.md). La [auditoría de exposición pública](evidence/publication-audit.md) documenta la revisión de fuente, historial y assets.

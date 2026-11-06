@@ -1,6 +1,6 @@
 # Despliegue con Deploy Studio
 
-El manifiesto `terraform/deploy-studio.json` define el proyecto `aidp-ai-market-intelligence`, schema 1. Deploy Studio fija repositorio, release y commit, prepara Terraform y ejecuta los hooks con la identidad OCI del operador. El resultado previsto es un agente TEST con investigación pausada.
+El manifiesto `terraform/deploy-studio.json` define el proyecto `aidp-ai-market-intelligence`, schema 2. Deploy Studio fija repositorio, release y commit, prepara Terraform y ejecuta los hooks con la identidad OCI del operador. El resultado previsto es un agente TEST con investigación pausada.
 
 ## Preparación
 
@@ -78,3 +78,8 @@ El modelo se guarda como `services={model_id,region,compartment_id}` en la fuent
 Los outputs identifican plataforma/workspace, bucket/namespace, base y propiedad, región, dominio, administrador, modelo, operación y estado. `workspace_key` de una plataforma nueva se resuelve nativamente durante post-apply. `memory_status=READY` y un probe pausado no acreditan continuidad o aislamiento de checkpoints ni calidad de investigación. Esas comprobaciones siguen pendientes de aceptación nativa.
 
 Para Resume, actualización, fallos y locks, consulta [operación](operations.md).
+## Formulario declarativo de Deploy Studio
+
+`terraform/deploy-studio.json` utiliza `schema_version: 2`. `form.groups` declara los títulos y el orden de los grupos; cada lista `items` fija el orden de campos, archivos y controles comunes, y `span` su ancho en columnas. Los campos declaran valores predeterminados y condiciones de visibilidad. CloudTechNext valida las referencias y requiere este contrato; no reconstruye formularios antiguos. Las credenciales se cargan en el grupo `credentials`; los demás controles se habilitan tras validarlas. Las releases publicadas conservan sus manifiestos inmutables: este contrato requiere una nueva release y un motor compatible.
+
+El grupo inicial contiene solo `oci_config` y `oci_key`. El destino declara `oci_region`, `compartment_mode`, `new_compartment` y `existing_compartment`, con etiquetas y opciones en el JSON; estas últimas coinciden con `capabilities.compartment_modes`. Cada campo y archivo se referencia exactamente una vez. Market conserva `existing_database_wallet=none`, por lo que no declara el control `database_wallet`. La versión del contexto de hooks sigue siendo 1: es un contrato distinto del schema del formulario.

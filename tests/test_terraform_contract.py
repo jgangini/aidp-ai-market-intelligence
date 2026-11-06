@@ -1,11 +1,52 @@
 """Deployment contract invariants; native ownership tests live in terraform/tests."""
 import json
+from collections import Counter
 from pathlib import Path
 import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = json.loads((ROOT / "terraform/deploy-studio.json").read_text(encoding="utf-8"))
+
+
+def test_declarative_form_places_every_field_and_file_exactly_once():
+    assert MANIFEST["schema_version"] == 2
+    form = MANIFEST["form"]
+    groups = form["groups"]
+    assert len({group["id"] for group in groups}) == len(groups)
+    placed = Counter()
+    for group in groups:
+        assert group["title"].strip() and group["items"]
+        for item in group["items"]:
+            assert item["kind"] in {"field", "file", "control"}
+            assert item.get("span", 2) in {1, 2}
+            if item["kind"] != "control":
+                placed[item["kind"], item["name"]] += 1
+                collection = form["fields" if item["kind"] == "field" else "files"]
+                definition = next(entry for entry in collection if entry["name"] == item["name"])
+                assert definition.get("group", group["id"]) == group["id"]
+    expected = Counter((kind, entry["name"]) for kind, key in (("field", "fields"), ("file", "files"))
+                       for entry in form.get(key, []))
+    assert placed == expected
+    assert all(count == 1 for count in placed.values())
+
+
+def test_declarative_credentials_and_destination_controls_match_capabilities():
+    groups = MANIFEST["form"]["groups"]
+    assert groups[0]["id"] == "credentials"
+    assert [(item["kind"], item["name"]) for item in groups[0]["items"]] == [
+        ("control", "oci_config"), ("control", "oci_key")]
+    controls = [item for group in groups for item in group["items"] if item["kind"] == "control"]
+    assert Counter(item["name"] for item in controls) == Counter([
+        "oci_config", "oci_key", "oci_region", "compartment_mode", "new_compartment", "existing_compartment"])
+    assert all(item["label"].strip() for item in controls)
+    services = next(group for group in groups if group["id"] == "services")
+    assert services["items"][0]["name"] == "oci_region"
+    assert services["items"][0]["span"] == 2
+    mode = next(item for item in controls if item["name"] == "compartment_mode")
+    assert [option["value"] for option in mode["options"]] == MANIFEST["capabilities"]["compartment_modes"]
+    assert all(option["label"].strip() for option in mode["options"])
+    assert MANIFEST["capabilities"]["existing_database_wallet"] == "none"
 
 
 def test_apify_secret_cannot_enter_terraform_or_public_outputs():
