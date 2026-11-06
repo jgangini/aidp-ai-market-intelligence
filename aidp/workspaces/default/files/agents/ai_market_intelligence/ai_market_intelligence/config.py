@@ -8,6 +8,7 @@ from .runtime_versions import RUNTIME_DISTRIBUTIONS
 SERVICE_FIELDS={'credential_name','identity_sha256','region','model_endpoint','model_id','compartment_id',
     'guardrails_config','tenant_id','generation_id','namespace','bucket','enabled_sources','search_context',
     'candidate_revision','runtime_profile','spending_mode'}
+PAUSED_MODEL_FIELDS={'model_id','region','compartment_id'}
 SOURCE_KEYS={'web','x','youtube','facebook','instagram','market_data','world_bank','financial_document'}
 
 
@@ -20,6 +21,14 @@ def validate_market_config(config):
     if services is None:
         if config['research_enabled']:
             raise ValueError('Research requires explicit authenticated service bindings')
+        return config
+    if not config['research_enabled'] and isinstance(services,dict) and set(services)==PAUSED_MODEL_FIELDS:
+        for key in PAUSED_MODEL_FIELDS:
+            if (not isinstance(services[key],str) or not 1<=len(services[key])<=256
+                    or any(ord(char)<=32 for char in services[key])):
+                raise ValueError('A bounded paused model reference is required: '+key)
+        if not re.fullmatch(r'[a-z]{2}-[a-z0-9-]+-[0-9]+',services['region']):
+            raise ValueError('A canonical paused model region is required')
         return config
     if not isinstance(services,dict) or set(services)!=SERVICE_FIELDS:
         raise ValueError('Current services require the complete reviewed binding, without SQL fields')

@@ -349,3 +349,43 @@ def test_market_initial_test_uses_verified_native_init_contract(monkeypatch):
     assert calls == [('POST', '/workspaces/workspace/actions/redeployAgentFlow',
         {'agentFlowKey': 'agent', 'agentFlowComputeKey': 'compute', 'deploymentType': 'TEST'})]
     assert receipt['deployment_type'] == 'TEST' and receipt['previous_version'] is None
+
+
+def test_new_receipt_freezes_selected_model_before_any_resume():
+    api=client()
+    stored=[]
+    api._read_installation=lambda workspace: copy.deepcopy(stored[-1]) if stored else None
+    api._save=lambda item: stored.append(copy.deepcopy(item))
+    api._ensure_workspace_layout=lambda *args: None
+    api._step=lambda state,token,session:'credentials'
+    api._advance('owner',OP,True,None,None)
+    initial=copy.deepcopy(stored[-1]['runtime_config'])
+    assert initial=={'schema_version':1,'research_enabled':False,'services':{
+        'model_id':'model','region':'us-chicago-1','compartment_id':'compartment'}}
+    api.settings.agent_model_id='changed-after-submit'
+    api.settings.aidp_region='us-ashburn-1'
+    api.settings.compartment_id='changed-compartment'
+    api._advance('owner',OP,True,None,None)
+    assert stored[-1]['runtime_config']==initial
+    assert api._runtime_config(stored[-1])==initial
+    assert api._descriptor(stored[-1])['runtime_config_sha256']==current.runtime_config_hash(initial)
+    extracted=api._runtime_config(stored[-1])
+    extracted['services']['model_id']='mutated-copy'
+    assert stored[-1]['runtime_config']==initial
+
+
+def test_unbound_existing_paused_receipt_is_not_reconstructed_from_live_model_settings():
+    api=client()
+    record=saved('ready')
+    assert 'runtime_config' not in record
+    api.settings.agent_model_id='metadata-only-new-selection'
+    assert api._runtime_config(record)=={'schema_version':1,'research_enabled':False}
+    assert 'runtime_config_sha256' not in api._descriptor(record)
+
+
+def test_installer_cannot_enable_research_through_receipt_config():
+    api=client()
+    record=saved()
+    record['runtime_config']={'schema_version':1,'research_enabled':True}
+    with pytest.raises(ValueError):
+        api._runtime_config(record)

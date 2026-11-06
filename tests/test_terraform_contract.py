@@ -21,6 +21,29 @@ def test_apify_secret_cannot_enter_terraform_or_public_outputs():
     assert MANIFEST["terraform"]["package_oci_credentials"] is False
 
 
+def test_memory_password_uses_protected_hooks_without_aidp_state_credential():
+    fields = {field["name"]: field for field in MANIFEST["form"]["fields"]}
+    secret = fields['autonomous_database_admin_password']
+    assert secret['secret'] and secret['type'] == 'password' and 'default' not in secret
+    for hook in ('preflight', 'post_apply'):
+        assert 'autonomous_database_admin_password' in MANIFEST[hook]['secret_inputs']
+    terraform = '\n'.join(p.read_text() for p in (ROOT/'terraform').glob('*.tf'))
+    assert not re.search(r'\bvector_db_admin_cred\s*=', terraform)
+    assert 'autonomous_database_admin_password' not in MANIFEST['outputs']
+    assert fields['autonomous_database_version']['transform'] == 'database_profile'
+    assert fields['autonomous_database_mode']['group'] == 'database'
+
+
+def test_public_status_reports_saved_model_instead_of_live_selection():
+    from ai_market_intelligence.client import public_status
+    config = {'schema_version': 1, 'research_enabled': False, 'services': {
+        'model_id': 'saved-model', 'region': 'us-chicago-1', 'compartment_id': 'ocid1.compartment.oc1..fixture'}}
+    status = public_status({'phase': 'ready', 'runtime_config': config})
+    assert status['configured_agent_model_id'] == 'saved-model'
+    assert status['enabled'] is False
+    assert public_status()['configured_agent_model_id'] == ''
+
+
 def test_existing_destination_uses_exact_keys_and_no_portal_resources():
     fields = {field["name"]: field for field in MANIFEST["form"]["fields"]}
     for key in ("existing_ai_data_platform_ocid", "existing_workspace_key"):
@@ -29,9 +52,11 @@ def test_existing_destination_uses_exact_keys_and_no_portal_resources():
     assert fields["admin_user_ocid"]["options_source"] == "oci_aidp_administrators"
     terraform = "\n".join(path.read_text(encoding="utf-8") for path in (ROOT / "terraform").glob("*.tf"))
     resource_types = set(re.findall(r'resource\s+"([^"]+)"', terraform))
-    assert resource_types <= {"oci_identity_policy", "time_sleep", "oci_ai_data_platform_ai_data_platform", "oci_objectstorage_bucket"}
+    assert resource_types <= {"oci_identity_policy", "time_sleep", "oci_ai_data_platform_ai_data_platform", "oci_objectstorage_bucket", "oci_database_autonomous_database", "terraform_data"}
     assert "oci_core_instance" not in resource_types
-    assert MANIFEST["capabilities"]["database_profile"] == "none"
+    assert MANIFEST["capabilities"]["database_profile"] == "new_or_existing"
+    assert MANIFEST["capabilities"]["existing_database_wallet"] == "none"
+    assert fields["existing_ai_data_platform_ocid"]["options_source"] == "oci_aidp_platforms"
 
 
 def test_administrator_selection_is_required_without_self_granted_privileges():

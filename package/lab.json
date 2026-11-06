@@ -2,7 +2,7 @@
   "schema_version": 1,
   "lab_id": "ai_market_intelligence",
   "display_name": "AI Market Intelligence",
-  "pack_version": "2.0.0",
+  "pack_version": "2.0.1",
   "status": "planned",
   "kind": "global_module",
   "scope": "global",
@@ -31,7 +31,7 @@
     "card": {
       "name": "ai_market_intelligence",
       "description": "On-demand evidence-based market research with authenticated AIDP sessions and conditional Object Storage ledgers. The installed agent stays paused on TEST until native acceptance; no automatic scheduled dispatch or visual charts are enabled.",
-      "version": "2.0.0",
+      "version": "2.0.1",
       "capabilities": {
         "isStreaming": true
       },
@@ -107,7 +107,7 @@
     {
       "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/config.py",
       "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/config.py",
-      "sha256": "1047f7bfc16f3f8a5887e8c54a1a43f03efbc9dcf39709614f56c1b1c9541435"
+      "sha256": "0608645831dc425a57c4d052900d175411de670728f64785b3d7a7d27a57e933"
     },
     {
       "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/connectors.py",
@@ -274,5 +274,5 @@
       "sha256": "02d8ebfd9f19dd08b7c1b47e22137899f29fc525e208cdb88c285492e21ad477"
     }
   ],
-  "pack_sha256": "2aca07b72426856a977ea6224da9dc88f57a0146832dfcd5940baf285c3b20c7"
+  "pack_sha256": "d0efa328e0097578cff1fbd8c01c762bc5b8424f7400f762cc8fa7390e247006"
 }

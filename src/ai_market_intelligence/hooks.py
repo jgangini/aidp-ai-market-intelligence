@@ -15,6 +15,7 @@ from .client import MarketAidpClient
 from .errors import AidpProvisionConflict
 from .lifecycle import install
 from .settings import Settings
+from .memory import preflight_memory, ensure_memory
 
 
 def _outputs(context):
@@ -64,7 +65,8 @@ def preflight(context, secrets, config_file):
     if action not in ('install', 'update', 'redeploy', 'rollback'):
         raise ValueError('Unknown lifecycle action')
     recovery = action == 'rollback'
-    if action != 'install' and (fields['aidp_mode'] != 'existing' or fields['artifacts_bucket_mode'] != 'existing'):
+    if action != 'install' and (fields['aidp_mode'] != 'existing' or fields['artifacts_bucket_mode'] != 'existing'
+                              or fields.get('autonomous_database_mode') != 'existing'):
         raise AidpProvisionConflict('A maintenance request must reference the existing AIDP and artifacts bucket; it cannot create infrastructure or change its original owner.')
     if fields['aidp_mode'] not in ('new', 'existing'):
         raise ValueError('Invalid deployment mode')
@@ -111,8 +113,9 @@ def preflight(context, secrets, config_file):
         raise ValueError('New platform cannot carry an existing destination selection')
     if fields['artifacts_bucket_mode'] == 'existing':
         storage.head_bucket(namespace, fields['artifacts_bucket_name'])
+    memory_event = preflight_memory(context, secrets, {**config, 'region': context['region']}, signer)
     events = [{'name': 'Identity', 'status': 'passed',
-               'message': 'Active selected administrator verified; new AIDP roles are assigned and revalidated after bootstrap.'}]
+               'message': 'Active selected administrator verified; new AIDP roles are assigned and revalidated after bootstrap.'}, memory_event]
     if recovery:
         events.append({'name': 'Recovery', 'status': 'warning',
             'message': 'Rollback restores recorded paused artifacts only; no Apify or model call is required or started.'})
@@ -155,8 +158,13 @@ def maintenance_operation_id(context, action, package_sha256):
         if str(UUID(requested)) != requested:
             raise ValueError('A canonical operation UUID is required')
         return requested
+    compartment = context.get('compartment', '')
+    model = {'model_id': context['inputs']['agent_model_id'], 'region': context['region'],
+             'compartment_id': _outputs(context).get('compartment_id') or (
+                 compartment.get('id', '') if isinstance(compartment, dict) else compartment)}
+    binding = hashlib.sha256(json.dumps(model, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     return str(uuid5(NAMESPACE_URL, 'https://github.com/jgangini/aidp-ai_market-intelligence/deployments/'
-        + context['deployment_id'] + '/' + action + '/' + package_sha256))
+        + context['deployment_id'] + '/' + action + '/' + package_sha256 + '/' + binding))
 
 
 def post_apply(context, secrets, config_file):
@@ -192,6 +200,8 @@ def post_apply(context, secrets, config_file):
             apify = check_apify(_token(secrets))
             if not apify['reads_verified']:
                 raise AidpProvisionConflict('Apify account/actor/build reads failed; no installation was started.')
+        verify_administrator(client, roles_required=not new)
+        memory_database_id = ensure_memory(client, context, secrets, outputs, operation)
         # The default workspace of a new platform is matched exactly once, then bound by key.
         workspace = client._workspace()
         client.settings = settings.model_copy(update={'aidp_workspace_key': workspace['key']})
@@ -214,7 +224,9 @@ def post_apply(context, secrets, config_file):
         recovered_failure = status['status'] == 'rolled_back' and action != 'rollback'
         return {'outputs': {'installation_status': status['status'], 'installation_phase': status['phase'],
             'operation_id': status['operation_id'], 'deployment_surface': 'TEST', 'research_enabled': False,
-            'apify_execution_permission': 'not_verified', 'workspace_key': workspace['key'], 'maintenance_action': action},
+            'apify_execution_permission': 'not_verified', 'workspace_key': workspace['key'], 'maintenance_action': action,
+            'autonomous_database_id': memory_database_id, 'memory_status': 'READY',
+            'configured_agent_model_id': status.get('configured_agent_model_id', '')},
             'events': [{'level': 'error' if recovered_failure else 'success',
                 'message': ('Candidate update failed; the previous TEST candidate was restored and verified.' if recovered_failure
                             else 'Market lifecycle operation verified in TEST with research paused.')}]}

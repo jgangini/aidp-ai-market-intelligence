@@ -15,7 +15,7 @@ from ai_market_intelligence.installation import agent_package as packaging
 
 def test_package_has_only_current_source_and_real_aidp_resources():
     pack = catalog.load_package('ai_market_intelligence', require_available=False)
-    assert pack.status == 'planned' and pack.pack_version == '2.0.0'
+    assert pack.status == 'planned' and pack.pack_version == '2.0.1'
     with pytest.raises(catalog.PackageError, match='not available yet'):
         catalog.load_package(pack.lab_id)
     assert not pack.datasets and not pack.notebooks and not pack.tables
@@ -132,3 +132,34 @@ def test_package_resolver_rejects_other_products():
     for name in ('ai_data_governance', 'gods_eye_view', '../ai_market_intelligence', None):
         with pytest.raises(catalog.PackageError, match='Unsupported package_id'):
             catalog.load_package(name, require_available=False)
+
+
+def test_paused_model_binding_is_embedded_without_grants_or_native_version_claims():
+    config={'schema_version':1,'research_enabled':False,'services':{
+        'model_id':'selected-model','region':'us-chicago-1','compartment_id':'selected-compartment'}}
+    source,_=agent_package(config)
+    tree=ast.parse(source)
+    constants={target.id:ast.literal_eval(node.value) for node in tree.body if isinstance(node,ast.Assign)
+        for target in node.targets if isinstance(target,ast.Name) and target.id=='RUNTIME_CONFIG'}
+    assert constants['RUNTIME_CONFIG']==config
+    changed={**config,'services':{**config['services'],'model_id':'another-model'}}
+    other,_=agent_package(changed)
+    assert source!=other
+    assert 'runtime_profile' not in constants['RUNTIME_CONFIG']['services']
+    assert 'spending_mode' not in constants['RUNTIME_CONFIG']['services']
+
+
+@pytest.mark.parametrize('change', [
+    {'model_id':''},{'model_id':'bad model'},{'region':'http://example.org'},
+    {'compartment_id':'contains whitespace'},{'token':'private'}, {'runtime_profile':{}},
+])
+def test_paused_model_binding_rejects_malformed_or_additional_fields(change):
+    services={'model_id':'selected-model','region':'us-chicago-1','compartment_id':'compartment',**change}
+    with pytest.raises(ValueError):
+        agent_package({'schema_version':1,'research_enabled':False,'services':services})
+
+
+def test_paused_subset_does_not_authorize_research():
+    with pytest.raises(ValueError,match='complete reviewed binding'):
+        agent_package({'schema_version':1,'research_enabled':True,'services':{
+            'model_id':'model','region':'us-chicago-1','compartment_id':'compartment'}})

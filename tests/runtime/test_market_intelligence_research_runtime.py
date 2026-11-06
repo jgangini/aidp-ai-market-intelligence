@@ -68,8 +68,8 @@ def market_active_config():
             ('langchain-core','langgraph','langgraph-checkpoint','langgraph-prebuilt','oci','pydantic','mcp','httpx','pypdf')}}}}
 
 
-def market_native_fixture(tmp_path,monkeypatch):
-    source,_=agent_package(market_active_config())
+def market_native_fixture(tmp_path,monkeypatch,*,config=None):
+    source,_=agent_package(market_active_config() if config is None else config)
     path=tmp_path/'market_intelligence.py'
     path.write_bytes(source)
     name='market_active_native_fixture'
@@ -103,7 +103,7 @@ def market_native_fixture(tmp_path,monkeypatch):
     return runtime,storage,model,provider,calls
 
 
-def market_native_turn(runtime,question='¿Qué reclamaciones aparecen en la muestra?',request_id='request-1',subject='fixture-user',session='fixture-session',command=None):
+def market_native_turn(runtime,question='Â¿QuÃ© reclamaciones aparecen en la muestra?',request_id='request-1',subject='fixture-user',session='fixture-session',command=None):
     async def run():
         messages=await runtime.invoke(json.dumps(command if command is not None else {'request_id':request_id,'question':question}),
             subject_id=subject,thread_id=session,trace_id='fixture-trace',stream=True)
@@ -156,8 +156,8 @@ def test_native_market_full_graph_preserves_source_role_artifacts_and_cached_del
 
 def test_native_market_clarification_context_is_retained_without_any_capture(tmp_path,monkeypatch):
     runtime,storage,model,provider,calls=market_native_fixture(tmp_path,monkeypatch)
-    model.clarification='¿En qué fuentes quieres buscar?'
-    first=market_native_turn(runtime,question='¿Qué se dice de la marca?')
+    model.clarification='Â¿En quÃ© fuentes quieres buscar?'
+    first=market_native_turn(runtime,question='Â¿QuÃ© se dice de la marca?')
     assert first[-1]['response']['status']=='needs_clarification' and provider.starts==[]
     original=model.ask
     context=[]
@@ -169,8 +169,8 @@ def test_native_market_clarification_context_is_retained_without_any_capture(tmp
     model.clarification=None
     result=market_native_turn(runtime,question='En ambas redes.',request_id='request-2')
     assert result[-1]['response']['status']=='complete'
-    assert context[0]['question']=='¿Qué se dice de la marca?'
-    assert context[0]['brief']['clarification']=='¿En qué fuentes quieres buscar?'
+    assert context[0]['question']=='Â¿QuÃ© se dice de la marca?'
+    assert context[0]['brief']['clarification']=='Â¿En quÃ© fuentes quieres buscar?'
 
 
 def test_native_market_two_authenticated_owners_never_share_snapshots(tmp_path,monkeypatch):
@@ -281,7 +281,7 @@ def test_completed_invalid_decision_releases_the_session_for_a_new_request(tmp_p
     first=market_native_turn(runtime)
     assert first[-1]['response']['status']=='failed'
     model.ask=original
-    second=market_native_turn(runtime,question='Otra investigación.',request_id='second')
+    second=market_native_turn(runtime,question='Otra investigaciÃ³n.',request_id='second')
     assert second[-1]['response']['status'] in {'complete','partial'}
     session=next(json.loads(raw) for key,(raw,_) in storage.objects.items() if '/sessions/' in key)
     assert session['requests']['request-1']['finished'] and session['active'] is None
@@ -297,7 +297,25 @@ def test_uncertain_model_failure_does_not_release_the_session_or_start_another_r
     model.ask=timeout
     market_native_turn(runtime)
     before=list(model.calls)
-    second=market_native_turn(runtime,question='Otra investigación.',request_id='second')
+    second=market_native_turn(runtime,question='Otra investigaciÃ³n.',request_id='second')
     assert second[-1]['response']['status']=='pending' and model.calls==before
     session=next(json.loads(raw) for key,(raw,_) in storage.objects.items() if '/sessions/' in key)
     assert session['active']['request_id']=='request-1'
+
+
+def test_native_paused_model_config_is_read_without_constructing_paid_services(tmp_path,monkeypatch):
+    config={'schema_version':1,'research_enabled':False,'services':{
+        'model_id':'selected-model','region':'us-chicago-1','compartment_id':'compartment'}}
+    runtime,storage,model,provider,calls=market_native_fixture(tmp_path,monkeypatch,config=config)
+    module=sys.modules[type(runtime).__module__]
+    def forbidden(*args,**kwargs):
+        pytest.fail('Paused inspection must not initialize memory, model or Apify services')
+    monkeypatch.setattr(module,'build_market_services',forbidden)
+    monkeypatch.setattr(module,'native_memory',forbidden)
+    assert runtime.config==config
+    result=asyncio.run(runtime.invoke('inspect_runtime',subject_id='fixture-user',thread_id='fixture-session'))
+    probe=json.loads(result['messages'][0].content)
+    assert probe['research_enabled'] is False and probe['model_calls']==probe['apify_starts']==0
+    with pytest.raises(ValueError,match='Research is paused'):
+        asyncio.run(runtime.invoke('Run research',subject_id='fixture-user',thread_id='fixture-session'))
+    assert not provider.starts

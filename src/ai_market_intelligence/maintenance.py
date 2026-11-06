@@ -9,7 +9,7 @@ from uuid import UUID
 from oci._vendor.requests.exceptions import RequestException
 
 from .authorization import verify_administrator
-from .client import AGENT_ROOT, CONTROL_ROOT, MODULE_ID, bound_test_sessions, validate_test_endpoint
+from .client import AGENT_ROOT, CONTROL_ROOT, MODULE_ID, bound_test_sessions, validate_test_endpoint, paused_runtime_config, runtime_config_hash
 from .errors import AidpProvisionConflict, AidpProvisionError, AidpProvisionPending
 from .installation.agent_package import agent_package, authoring_files
 from .installation.compute import prepare_compute
@@ -50,6 +50,12 @@ def _validate_journal(state):
             or journal['phase'] not in RUNNING_PHASES | {'ready'}
             or (journal['status'] == 'running') == (journal['phase'] == 'ready')):
         reject()
+    try:
+        config = paused_runtime_config(journal['target_runtime_config'])
+        if runtime_config_hash(config) != journal.get('target_config_sha256'):
+            reject()
+    except (KeyError, ValueError, TypeError):
+        reject()
     inventory = {'market_intelligence.py', 'requirements.txt', DESCRIPTOR, *authoring_files()}
     for side in ('before', 'target'):
         hashes = journal.get(side + '_hashes')
@@ -72,6 +78,17 @@ def _validate_journal(state):
         if str(UUID(before['operation_id'])) != before['operation_id']:
             reject()
     except (KeyError, ValueError, TypeError, AttributeError):
+        reject()
+    try:
+        before_config = paused_runtime_config(before.get('runtime_config', {'schema_version': 1, 'research_enabled': False}))
+        current_config = paused_runtime_config(state.get('runtime_config', {'schema_version': 1, 'research_enabled': False}))
+        if runtime_config_hash(before_config) != journal.get('before_config_sha256'):
+            reject()
+        expected = [before_config, config] if journal['status'] == 'running' else [
+            config if journal['status'] == 'completed' else before_config]
+        if current_config not in expected:
+            reject()
+    except (ValueError, TypeError):
         reject()
     for key in RESOURCE_IDENTITIES:
         if before['resources'].get(key) != state['resources'].get(key):
@@ -204,7 +221,8 @@ def _row(native, state):
 
 
 def _begin(client, native, state, action, operation, session):
-    pack, target = _target(client, state)
+    config = client._selected_runtime_config()
+    pack, target = _target(client, {**state, 'runtime_config': config})
     before = {name: _read(client, state['workspace'], AGENT_ROOT + '/' + name) for name in target}
     if any(value is None for value in before.values()):
         raise AidpProvisionConflict('The managed artifact inventory is incomplete; update cannot add or adopt files.')
@@ -229,7 +247,9 @@ def _begin(client, native, state, action, operation, session):
     snapshot = {key: copy.deepcopy(value) for key, value in state.items()
                 if key not in {'maintenance', 'maintenance_history', 'history'}}
     journal = {'schema_version': 1, 'operation_id': operation, 'action': action, 'phase': 'backup', 'status': 'running',
-               'before_state': snapshot, 'target_pack_sha256': pack, 'session_key': chosen,
+               'before_state': snapshot, 'before_config_sha256': runtime_config_hash(client._runtime_config(state)),
+               'target_pack_sha256': pack, 'session_key': chosen,
+               'target_runtime_config': copy.deepcopy(config), 'target_config_sha256': runtime_config_hash(config),
                'before_identity': deployment_identity(row), 'before_hashes': {name: _digest(raw) for name, raw in before.items()},
                'target_hashes': {name: _digest(raw) for name, raw in target.items()}}
     previous = state.get('maintenance')
@@ -258,7 +278,7 @@ def _backups(client, state, side):
 
 def _snapshot_files(client, state):
     journal = state['maintenance']
-    pack, target = _target(client, journal['before_state'])
+    pack, target = _target(client, {**journal['before_state'], 'runtime_config': journal['target_runtime_config']})
     if pack != journal['target_pack_sha256'] or {name: _digest(raw) for name, raw in target.items()} != journal['target_hashes']:
         raise AidpProvisionConflict('Resume with the exact saved maintenance package; its target changed.')
     for side in ('before', 'target'):
@@ -380,6 +400,10 @@ def _complete(client, native, state, rollback):
     if prefix + '_receipt' in journal:
         resources['test_receipt'] = journal[prefix + '_receipt']
     state['resources'] = resources
+    if rollback and 'runtime_config' not in journal['before_state']:
+        state.pop('runtime_config', None)
+    else:
+        state['runtime_config'] = copy.deepcopy(journal['before_state']['runtime_config'] if rollback else journal['target_runtime_config'])
     state['pack_sha256'] = journal['before_state']['pack_sha256'] if rollback else journal['target_pack_sha256']
     state.update(status='active', phase='ready')
     journal.update(status='rolled_back' if rollback else 'completed', phase='ready')
@@ -406,6 +430,8 @@ def maintain(client, action, operation_id, *, test_session_id=None, max_steps=80
         if journal and journal['operation_id'] == operation_id:
             if action != 'rollback' and journal['status'] in {'completed', 'rolled_back'}:
                 bundled = load_package(MODULE_ID, require_available=False).pack_sha256
+                if runtime_config_hash(client._selected_runtime_config()) != journal['target_config_sha256']:
+                    raise AidpProvisionConflict('This maintenance operation belongs to another model configuration; use a new operation for changed configuration.')
                 if bundled != journal['target_pack_sha256']:
                     raise AidpProvisionConflict('This maintenance operation belongs to another bundled candidate; use a new operation for a changed package.')
             if action == 'rollback' and journal['status'] != 'rolled_back':

@@ -66,3 +66,11 @@ output "owned_ai_data_platform" {
 output "owned_artifacts_bucket" {
   value = var.artifacts_bucket_mode == "new"
 }
+
+output "autonomous_database_id" {
+  value = local.autonomous_database_id
+}
+
+output "owned_autonomous_database" {
+  value = var.autonomous_database_mode == "new"
+}

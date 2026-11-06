@@ -15,7 +15,8 @@ DOMAIN = 'ocid1.domain.oc1..synthetic'
 
 def context(mode='new'):
     fields = {'aidp_mode': mode, 'identity_domain_id': DOMAIN, 'admin_user_ocid': USER,
-        'agent_model_id': 'model', 'artifacts_bucket_mode': 'new', 'artifacts_bucket_name': 'artifacts'}
+        'agent_model_id': 'model', 'artifacts_bucket_mode': 'new', 'artifacts_bucket_name': 'artifacts',
+        'autonomous_database_mode': 'existing', 'existing_autonomous_database_ocid': 'ocid1.autonomousdatabase.oc1..synthetic'}
     if mode == 'existing':
         fields.update(existing_ai_data_platform_ocid='ocid1.aidataplatform.oc1..synthetic', existing_workspace_key='exact-key')
     return {'schema_version': 1, 'project_id': 'aidp-ai-market-intelligence', 'deployment_id': DEPLOYMENT,
@@ -25,6 +26,7 @@ def context(mode='new'):
 
 @pytest.fixture
 def native(monkeypatch):
+    monkeypatch.setattr(hooks, 'preflight_memory', Mock(return_value={'name': 'Agent Flow memory', 'status': 'passed', 'message': 'Fixture binding'}))
     monkeypatch.setattr(hooks.oci.config, 'from_file', lambda *a: {'tenancy': 'tenancy', 'user': 'operator',
         'fingerprint': 'fingerprint', 'key_file': '/not-a-real-key'})
     monkeypatch.setattr(hooks.oci.signer, 'Signer', lambda **k: 'operator-signer')
@@ -62,6 +64,8 @@ def test_new_preflight_does_not_consult_nonexistent_aidp_roles(native, monkeypat
     assert result['events'][-1]['status'] == 'warning'
     assert 'not verified' in result['events'][-1]['message']
     assert 'synthetic-local-preflight-secret' not in json.dumps(result)
+    hooks.preflight_memory.assert_called_once()
+    assert hooks.preflight_memory.call_args.args[2]['region'] == 'us-chicago-1'
 
 
 def test_existing_preflight_uses_exact_key_and_revalidates_roles(native, monkeypatch):
@@ -153,8 +157,16 @@ def test_fresh_maintenance_request_cannot_create_platform_or_bucket(monkeypatch,
         hooks.preflight(c, {}, 'config')
 
 
-@pytest.mark.parametrize('foreign_bucket', [False, True])
-def test_postapply_binds_exact_owned_bucket_before_install(monkeypatch, foreign_bucket):
+@pytest.mark.parametrize('foreign_bucket,pending_memory,revoked_admin', [(False,False,False), (True,False,False), (False,True,False), (False,False,True)])
+def test_postapply_binds_exact_owned_bucket_before_install(monkeypatch, foreign_bucket, pending_memory, revoked_admin):
+    memory = Mock(return_value='ocid1.autonomousdatabase.oc1..synthetic')
+    if pending_memory:
+        memory.side_effect = AidpProvisionConflict('Memory association is unverified')
+    monkeypatch.setattr(hooks, 'ensure_memory', memory)
+    auth = Mock()
+    if revoked_admin:
+        auth.side_effect = AidpProvisionConflict('Selected administrator was revoked')
+    monkeypatch.setattr(hooks, 'verify_administrator', auth)
     c = context()
     c['compartment'] = {'id': 'ocid1.compartment.oc1..synthetic'}
     binding = hashlib.sha256(':'.join(['tenancy', c['region'], c['compartment']['id'], '89abcdef', DOMAIN, USER]).encode()).hexdigest()
@@ -181,6 +193,16 @@ def test_postapply_binds_exact_owned_bucket_before_install(monkeypatch, foreign_
         with pytest.raises(AidpProvisionConflict, match='not owned'):
             hooks.post_apply(c, secrets(), 'config')
         install.assert_not_called()
+        memory.assert_not_called()
+    elif pending_memory:
+        with pytest.raises(AidpProvisionConflict, match='association'):
+            hooks.post_apply(c, secrets(), 'config')
+        install.assert_not_called()
+    elif revoked_admin:
+        with pytest.raises(AidpProvisionConflict, match='revoked'):
+            hooks.post_apply(c, secrets(), 'config')
+        memory.assert_not_called()
+        install.assert_not_called()
     else:
         result = hooks.post_apply(c, secrets(), 'config')
         assert result['outputs']['research_enabled'] is False
@@ -189,3 +211,21 @@ def test_postapply_binds_exact_owned_bucket_before_install(monkeypatch, foreign_
         assert install.call_args.args[0].settings.aidp_workspace_key == 'resolved-exact-key'
         assert install.call_args.kwargs['new_platform'] is True
         assert platform.call_args.kwargs['deployment_binding'] == binding
+        memory.assert_called_once()
+        assert auth.call_args.kwargs == {'roles_required':False}
+
+
+def test_model_change_produces_new_automatic_maintenance_identity():
+    c = context('existing')
+    first = hooks.maintenance_operation_id(c, 'update', 'package-sha')
+    assert hooks.maintenance_operation_id(c, 'update', 'package-sha') == first
+    c['inputs']['agent_model_id'] = 'different-model'
+    assert hooks.maintenance_operation_id(c, 'update', 'package-sha') != first
+
+
+def test_maintenance_rejects_new_memory_before_loading_credentials(monkeypatch):
+    c = context('existing')
+    c['inputs'].update(lifecycle_action='update', artifacts_bucket_mode='existing', autonomous_database_mode='new')
+    monkeypatch.setattr(hooks.oci.config, 'from_file', lambda *args: pytest.fail('Must reject before credentials'))
+    with pytest.raises(AidpProvisionConflict, match='cannot create infrastructure'):
+        hooks.preflight(c, {}, 'config')

@@ -31,6 +31,10 @@ def deployment(action='update', deployment_id=DEPLOYMENT):
 @pytest.fixture
 def native(monkeypatch):
     from ai_market_intelligence import lifecycle, maintenance
+    auth=Mock()
+    memory=Mock(return_value='ocid1.autonomousdatabase.oc1..synthetic')
+    monkeypatch.setattr(hooks,'verify_administrator',auth)
+    monkeypatch.setattr(hooks,'ensure_memory',memory)
     clients=[]
     class Client:
         def __init__(self,settings):
@@ -57,7 +61,7 @@ def native(monkeypatch):
             'operation_id':operation_id,'action':action,'research_enabled':False,'deployment_surface':'TEST'}
     maintain=Mock(side_effect=result)
     monkeypatch.setattr(maintenance,'maintain',maintain)
-    return NS(clients=clients,maintain=maintain,preflight=preflight,install=install,bootstrap=bootstrap)
+    return NS(clients=clients,maintain=maintain,preflight=preflight,install=install,bootstrap=bootstrap,auth=auth,memory=memory)
 
 
 @pytest.mark.parametrize('action',['update','redeploy','rollback'])
@@ -79,6 +83,8 @@ def test_exact_explicit_operation_session_and_paused_outputs(native,action):
     assert result['outputs']['operation_id']==OP
     assert result['outputs']['installation_status']==('rolled_back' if action=='rollback' else 'completed')
     assert native.clients[0].closed
+    native.auth.assert_called_once()
+    native.memory.assert_called_once()
     if action=='rollback':
         assert result['events'][0]['level']=='success'
         assert 'installed' not in result['events'][0]['message'].lower()

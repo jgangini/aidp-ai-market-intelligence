@@ -135,3 +135,64 @@ variable "test_session_id" {
   default     = ""
   description = "Optional existing bound TEST session; no session reset."
 }
+
+variable "autonomous_database_mode" {
+  type    = string
+  default = "new"
+  validation {
+    condition     = contains(["new", "existing"], var.autonomous_database_mode)
+    error_message = "Choose new or existing memory database."
+  }
+}
+
+variable "autonomous_database_version" {
+  type    = string
+  default = "26ai"
+  validation {
+    condition     = var.autonomous_database_version == "26ai"
+    error_message = "Agent Flow memory requires Oracle AI Database 26ai."
+  }
+}
+
+variable "autonomous_database_workload" {
+  type    = string
+  default = "DW"
+  validation {
+    condition     = var.autonomous_database_workload == "DW"
+    error_message = "Agent Flow memory requires Autonomous AI Lakehouse (DW)."
+  }
+}
+
+variable "autonomous_database_compute_count" {
+  type    = number
+  default = 4
+  validation {
+    condition     = var.autonomous_database_compute_count == floor(var.autonomous_database_compute_count) && var.autonomous_database_compute_count >= 2 && var.autonomous_database_compute_count <= 512
+    error_message = "Choose an integer ECPU count from 2 to 512."
+  }
+}
+
+variable "existing_autonomous_database_ocid" {
+  type    = string
+  default = ""
+  validation {
+    condition     = var.existing_autonomous_database_ocid == "" || can(regex("^ocid1\\.autonomousdatabase\\.[^[:space:]]+$", var.existing_autonomous_database_ocid))
+    error_message = "Select the exact existing Autonomous database OCID."
+  }
+}
+
+variable "autonomous_database_admin_password" {
+  type        = string
+  sensitive   = true
+  default     = ""
+  description = "ADMIN password for database creation; protected hook input enables AI. Never sent to the AIDP Terraform resource."
+  validation {
+    condition = var.autonomous_database_admin_password == "" || (
+      length(var.autonomous_database_admin_password) >= 12 && length(var.autonomous_database_admin_password) <= 30 &&
+      can(regex("[A-Z]", var.autonomous_database_admin_password)) && can(regex("[a-z]", var.autonomous_database_admin_password)) &&
+      can(regex("[0-9]", var.autonomous_database_admin_password)) && !strcontains(lower(var.autonomous_database_admin_password), "admin") &&
+      !strcontains(var.autonomous_database_admin_password, "\"") && !strcontains(var.autonomous_database_admin_password, "'")
+    )
+    error_message = "ADMIN password must contain 12-30 characters, upper/lowercase and a digit, without quotes or admin."
+  }
+}

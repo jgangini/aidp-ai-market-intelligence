@@ -11,12 +11,14 @@
       "existing"
     ],
     "default_compartment_name": "ai-market-intelligence",
-    "database_profile": "none",
+    "database_profile": "new_or_existing",
     "region_selection": "subscribed_compatible",
     "regional_requirements": [
       "aidp",
+      "autonomous_26ai_dw",
       "genai_chat"
-    ]
+    ],
+    "existing_database_wallet": "none"
   },
   "presentation": {
     "title": "AIDP AI Market Intelligence",
@@ -34,7 +36,7 @@
     "fields": [
       {
         "name": "aidp_mode",
-        "label": "AIDP destination",
+        "label": "Services mode",
         "type": "select",
         "required": true,
         "default": "new",
@@ -47,18 +49,21 @@
             "value": "existing",
             "label": "Use existing AIDP"
           }
-        ]
+        ],
+        "group": "aidp_platform"
       },
       {
         "name": "existing_ai_data_platform_ocid",
-        "label": "Existing AIDP OCID",
-        "type": "text",
+        "label": "Existing AIDP",
+        "type": "select",
         "required": true,
         "pattern": "^ocid1\\.aidataplatform\\.[^\\s]+$",
         "visible_when": {
           "field": "aidp_mode",
           "equals": "existing"
-        }
+        },
+        "group": "aidp_platform",
+        "options_source": "oci_aidp_platforms"
       },
       {
         "name": "existing_workspace_key",
@@ -69,7 +74,8 @@
         "visible_when": {
           "field": "aidp_mode",
           "equals": "existing"
-        }
+        },
+        "group": "aidp_platform"
       },
       {
         "name": "identity_domain_id",
@@ -77,21 +83,24 @@
         "type": "select",
         "options_source": "oci_identity_domains",
         "required": true,
-        "pattern": "^ocid1\\.domain\\.[^\\s]+$"
+        "pattern": "^ocid1\\.domain\\.[^\\s]+$",
+        "group": "identity"
       },
       {
         "name": "admin_user_ocid",
         "label": "Administrator (new: assign; existing: verify roles)",
         "type": "select",
         "required": true,
-        "options_source": "oci_aidp_administrators"
+        "options_source": "oci_aidp_administrators",
+        "group": "identity"
       },
       {
         "name": "agent_model_id",
         "label": "OCI chat model",
         "type": "select",
         "required": true,
-        "options_source": "oci_genai_chat_models"
+        "options_source": "oci_genai_chat_models",
+        "group": "enterprise_ai"
       },
       {
         "name": "artifacts_bucket_mode",
@@ -108,14 +117,16 @@
             "value": "existing",
             "label": "Use existing bucket"
           }
-        ]
+        ],
+        "group": "artifacts"
       },
       {
         "name": "artifacts_bucket_name",
         "label": "Exact artifacts bucket name",
         "type": "text",
         "required": true,
-        "pattern": "^[A-Za-z0-9_.-]{1,256}$"
+        "pattern": "^[A-Za-z0-9_.-]{1,256}$",
+        "group": "artifacts"
       },
       {
         "name": "apify_token",
@@ -125,7 +136,8 @@
         "secret": true,
         "transform": "none",
         "min_length": 20,
-        "max_length": 512
+        "max_length": 512,
+        "group": "enterprise_ai"
       },
       {
         "name": "lifecycle_action",
@@ -150,7 +162,8 @@
             "value": "rollback",
             "label": "Restore previous candidate"
           }
-        ]
+        ],
+        "group": "aidp_platform"
       },
       {
         "name": "operation_request_id",
@@ -158,7 +171,8 @@
         "type": "text",
         "required": false,
         "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-        "max_length": 36
+        "max_length": 36,
+        "group": "aidp_platform"
       },
       {
         "name": "test_session_id",
@@ -166,7 +180,80 @@
         "type": "text",
         "required": false,
         "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-        "max_length": 36
+        "max_length": 36,
+        "group": "aidp_platform"
+      },
+      {
+        "name": "autonomous_database_mode",
+        "label": "Agent Flow memory database",
+        "type": "select",
+        "required": true,
+        "default": "new",
+        "group": "database",
+        "options": [
+          {
+            "value": "new",
+            "label": "Create Autonomous AI Lakehouse"
+          },
+          {
+            "value": "existing",
+            "label": "Use existing Autonomous AI Lakehouse"
+          }
+        ]
+      },
+      {
+        "name": "autonomous_database_version",
+        "label": "Memory database profile",
+        "type": "select",
+        "required": true,
+        "default": "26ai:DW",
+        "group": "database",
+        "transform": "database_profile",
+        "options": [
+          {
+            "value": "26ai:DW",
+            "label": "Oracle AI Database 26ai \u00b7 Autonomous AI Lakehouse"
+          }
+        ],
+        "visible_when": {
+          "field": "autonomous_database_mode",
+          "equals": "new"
+        }
+      },
+      {
+        "name": "autonomous_database_compute_count",
+        "label": "Memory database ECPUs",
+        "type": "number",
+        "required": true,
+        "default": 4,
+        "group": "database",
+        "visible_when": {
+          "field": "autonomous_database_mode",
+          "equals": "new"
+        }
+      },
+      {
+        "name": "existing_autonomous_database_ocid",
+        "label": "Existing memory database OCID",
+        "type": "text",
+        "required": true,
+        "group": "database",
+        "pattern": "^ocid1\\.autonomousdatabase\\.[^\\s]+$",
+        "visible_when": {
+          "field": "autonomous_database_mode",
+          "equals": "existing"
+        }
+      },
+      {
+        "name": "autonomous_database_admin_password",
+        "label": "ADMIN password (required for new database or AI enablement)",
+        "type": "password",
+        "secret": true,
+        "required": false,
+        "transform": "none",
+        "min_length": 12,
+        "max_length": 30,
+        "group": "database"
       }
     ]
   },
@@ -222,7 +309,11 @@
     "research_enabled",
     "deployment_surface",
     "apify_execution_permission",
-    "maintenance_action"
+    "maintenance_action",
+    "autonomous_database_id",
+    "owned_autonomous_database",
+    "memory_status",
+    "configured_agent_model_id"
   ],
   "artifacts": [],
   "preflight": {
@@ -230,7 +321,8 @@
     "timeout_seconds": 300,
     "requires_oci_credentials": true,
     "secret_inputs": [
-      "apify_token"
+      "apify_token",
+      "autonomous_database_admin_password"
     ],
     "output_inputs": [
       "home_region",
@@ -273,7 +365,8 @@
       "uv.lock"
     ],
     "secret_inputs": [
-      "apify_token"
+      "apify_token",
+      "autonomous_database_admin_password"
     ]
   }
 }

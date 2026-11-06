@@ -1,6 +1,7 @@
 """One resumable, ownership-bound Market Intelligence TEST installation."""
 from __future__ import annotations
 import asyncio
+import copy
 import hashlib
 import json
 import re
@@ -12,7 +13,7 @@ from uuid import UUID
 from ai_market_intelligence.transport import AidpClient
 from ai_market_intelligence.errors import AidpProvisionConflict, AidpProvisionError, AidpProvisionPending, AidpRequestError
 from ai_market_intelligence.package import load_package
-from ai_market_intelligence.installation.agent_package import agent_package, authoring_files
+from ai_market_intelligence.installation.agent_package import agent_package, authoring_files, validate_agent_config
 from ai_market_intelligence.installation.compute import COMPUTE_NAME, prepare_compute
 from ai_market_intelligence.installation.credentials import ensure_apify_credential, _project_credential, existing_project_reference, created_by_operation
 from ai_market_intelligence.runtime.runtime_versions import RUNTIME_DISTRIBUTIONS
@@ -25,15 +26,30 @@ CONTROL_ROOT = '/Workspace/.control/modules/' + MODULE_ID
 AGENT_ROOT = ROOT + '/agents/' + MODULE_ID
 PHASES = ('verify', 'credentials', 'compute', 'files', 'agent', 'permissions', 'test', 'ready')
 
+def runtime_config_hash(config):
+    return hashlib.sha256(json.dumps(config, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+
+
+def paused_runtime_config(config):
+    """Installer receipts may bind the selected model, never authorize research."""
+    validate_agent_config(config)
+    if config['research_enabled'] or (config.get('services') is not None and
+            set(config['services']) != {'model_id', 'region', 'compartment_id'}):
+        raise AidpProvisionConflict('The installer requires an exact paused model binding.')
+    return copy.deepcopy(config)
+
+
 def installation_phases(state):
     return PHASES
 
 def public_status(manifest=None):
     state = manifest or {}
+    model_binding = paused_runtime_config(state.get('runtime_config', {'schema_version': 1, 'research_enabled': False})).get('services', {})
     pack = load_package(MODULE_ID, require_available=False)
     phases = installation_phases(state)
     suffix = state.get('resources', {}).get('apify_token_suffix', '')
     result = {'module_id': MODULE_ID, 'display_name': 'AI Market Intelligence', 'deployment_surface': 'TEST', 'status': state.get('status', 'not_installed'), 'installed': state.get('phase') == 'ready', 'phase': state.get('phase', 'not_installed'), 'enabled': False, 'operation_id': state.get('operation_id'), 'operation_type': 'install', 'message': state.get('message', ''), 'bundled_version': pack.pack_version, 'target_pack_sha256': state.get('pack_sha256'), 'bundled_pack_sha256': pack.pack_sha256, 'reuse_existing': state.get('reuse_existing', True), 'completed_phases': list(phases[:phases.index(state['phase'])]) if state.get('phase') in phases else [], 'apify_credential_status': 'configured' if state.get('resources', {}).get('apify_credential_key') else 'missing', 'apify_credential_owned_by_operation': bool(state.get('resources', {}).get('apify_credential_key')), 'apify_token_suffix': suffix if state.get('resources', {}).get('apify_credential_key') and isinstance(suffix, str) and re.fullmatch('[A-Za-z0-9]{4}', suffix) else '', 'test_sessions': state.get('test_sessions', [])}
+    result['configured_agent_model_id'] = model_binding.get('model_id', '')
     maintenance = state.get('maintenance')
     if isinstance(maintenance, dict):
         result['maintenance'] = {key: maintenance[key] for key in ('operation_id', 'action', 'phase', 'status') if key in maintenance}
@@ -143,8 +159,9 @@ class MarketAidpClient(AidpClient):
         workspace = str(self._workspace()['key'])
         state = self._read_installation(workspace)
         if state is None:
+            config = self._selected_runtime_config()
             self._ensure_workspace_layout(workspace, ('/Workspace/.control', '/Workspace/.control/modules', CONTROL_ROOT, '/Workspace/.artifact', self.installation_root, self.installation_root + '/agents', AGENT_ROOT))
-            state = {'installer_version': 2, 'module_id': MODULE_ID, 'workspace': workspace, 'publication_root': self.installation_root, 'operation_id': operation, 'owner': user, 'reuse_existing': reuse, 'phase': 'verify', 'status': 'installing', 'resources': {}, 'pack_sha256': load_package(MODULE_ID, require_available=False).pack_sha256}
+            state = {'installer_version': 2, 'module_id': MODULE_ID, 'workspace': workspace, 'publication_root': self.installation_root, 'operation_id': operation, 'owner': user, 'reuse_existing': reuse, 'phase': 'verify', 'status': 'installing', 'resources': {}, 'runtime_config': config, 'pack_sha256': load_package(MODULE_ID, require_available=False).pack_sha256}
             self._save(state)
         if (state.get('maintenance') or {}).get('status') == 'running':
             raise AidpProvisionConflict('Resume the recorded maintenance operation; installation cannot overwrite its candidate.')
@@ -233,11 +250,19 @@ class MarketAidpClient(AidpClient):
             raise AidpProvisionConflict('Enter an Apify token or explicitly reuse the existing project credential.')
         resources['apify_credential_key'] = reference['credential_key']
 
+    def _selected_runtime_config(self):
+        return paused_runtime_config({'schema_version': 1, 'research_enabled': False, 'services': {
+            'model_id': self.settings.agent_model_id, 'region': self.settings.aidp_region,
+            'compartment_id': self.settings.compartment_id}})
+
     def _runtime_config(self, state):
-        return {'schema_version': 1, 'research_enabled': False}
+        return paused_runtime_config(state.get('runtime_config', {'schema_version': 1, 'research_enabled': False}))
 
     def _descriptor(self, state):
-        return {'module_id': 'ai_market_intelligence', 'schema_version': 1, 'operation_id': state['operation_id'], 'workspace': state['workspace'], 'owner': state['owner'], 'pack_sha256': state['pack_sha256']}
+        descriptor = {'module_id': 'ai_market_intelligence', 'schema_version': 1, 'operation_id': state['operation_id'], 'workspace': state['workspace'], 'owner': state['owner'], 'pack_sha256': state['pack_sha256']}
+        if 'runtime_config' in state:
+            descriptor['runtime_config_sha256'] = runtime_config_hash(self._runtime_config(state))
+        return descriptor
 
     def _assert_candidate(self, state):
         try:
@@ -268,7 +293,7 @@ class MarketAidpClient(AidpClient):
     def _step(self, state, token, session):
         phase = state['phase']
         if phase == 'verify':
-            if not all((self.settings.agent_model_id, self.settings.objectstorage_namespace, self.settings.compartment_id)):
+            if not all((self.settings.objectstorage_namespace, self.settings.compartment_id)):
                 raise AidpProvisionConflict('Configure the OCI model, compartment and artifacts storage before installation.')
             self._ensure_governance_bucket()
         elif phase == 'files':

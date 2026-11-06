@@ -41,6 +41,7 @@ resource "oci_ai_data_platform_ai_data_platform" "market" {
   display_name           = local.name_prefix
   default_workspace_name = local.workspace_name
   ai_data_platform_type  = "STRUCTURED"
+  is_enable_ai_feature   = false
   freeform_tags = {
     managed-by         = "deploy-studio"
     workload           = "ai-market-intelligence"

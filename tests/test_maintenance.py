@@ -62,7 +62,7 @@ class FakeNative:
 
 class FakeClient:
     def __init__(self):
-        self.settings = NS(admin_user_ocid='owner', aidp_region='us-chicago-1')
+        self.settings = NS(admin_user_ocid='owner', aidp_region='us-chicago-1', agent_model_id='selected-model', compartment_id='compartment')
         self.files = {}
         self.refreshes = []
         self.probes = []
@@ -84,7 +84,7 @@ class FakeClient:
         hashes = {'market_intelligence.py': sha(OLD), 'requirements.txt': sha(REQ)}
         self.saved = {'installer_version': 2, 'module_id': 'ai_market_intelligence', 'publication_root': ROOT,
             'workspace': 'workspace', 'owner': 'owner', 'operation_id': INSTALL, 'pack_sha256': 'old-pack',
-            'phase': 'ready', 'status': 'active', 'reuse_existing': True,
+            'phase': 'ready', 'status': 'active', 'reuse_existing': True, 'runtime_config': self._selected_runtime_config(),
             'resources': {'agent_key': 'agent', 'agent_compute_key': 'compute', 'shared_oci_credential_key': 'shared',
                           'apify_credential_key': 'apify', 'compute_creation_operation': INSTALL, 'source_sha256': sha(OLD),
                           'test_session_key': 'session', 'test_intent': {'package_sha256': sha(encoded(hashes))},
@@ -118,7 +118,10 @@ class FakeClient:
         return MarketAidpClient._descriptor(self, state)
 
     def _runtime_config(self, state):
-        return {'schema_version': 1, 'research_enabled': False}
+        return MarketAidpClient._runtime_config(self, state)
+
+    def _selected_runtime_config(self):
+        return MarketAidpClient._selected_runtime_config(self)
 
     def _workspace_bytes(self, workspace, path, *, phase):
         self.reads.append(path)
@@ -481,3 +484,90 @@ def test_backup_state_cannot_restore_foreign_installation_or_resource_keys(clien
     with pytest.raises(AidpProvisionConflict, match='journal is invalid'):
         run(client, 'rollback')
     assert not client.reads and len(client.uploads) == writes and not client.refreshes
+
+
+def test_model_update_commits_frozen_config_and_rollback_restores_it(client,monkeypatch):
+    original=copy.deepcopy(client.saved['runtime_config'])
+    client.settings.agent_model_id='replacement-model'
+    monkeypatch.setattr(work,'agent_package',lambda config:(encoded(config),{'requirements.txt':REQ}))
+    run(client)
+    selected=client.saved['runtime_config']
+    assert selected['services']['model_id']=='replacement-model'
+    assert client.files[AGENT_ROOT+'/market_intelligence.py']==encoded(selected)
+    assert client.saved['maintenance']['target_runtime_config']==selected
+    assert client.saved['maintenance']['target_config_sha256']==work.runtime_config_hash(selected)
+    assert json.loads(client.files[AGENT_ROOT+'/agent-manifest.json'])['runtime_config_sha256']==work.runtime_config_hash(selected)
+    client.settings.agent_model_id='another-live-setting'
+    run(client,'rollback')
+    assert client.saved['runtime_config']==original
+    assert all(client.files[path]==raw for path,raw in client.original_files.items())
+    assert_resource_identity_preserved(client)
+
+
+def test_pending_model_update_resumes_saved_target_instead_of_live_settings(client,monkeypatch):
+    client.settings.agent_model_id='requested-model'
+    monkeypatch.setattr(work,'agent_package',lambda config:(encoded(config),{'requirements.txt':REQ}))
+    with pytest.raises(AidpProvisionPending):
+        run(client,max_steps=1)
+    target=copy.deepcopy(client.saved['maintenance']['target_runtime_config'])
+    client.settings.agent_model_id='unrelated-after-restart'
+    run(client)
+    assert client.saved['runtime_config']==target
+    assert client.files[AGENT_ROOT+'/market_intelligence.py']==encoded(target)
+
+
+def test_same_operation_cannot_attest_a_different_model(client):
+    run(client)
+    writes=len(client.uploads)
+    client.settings.agent_model_id='different-model'
+    with pytest.raises(AidpProvisionConflict,match='model configuration'):
+        run(client)
+    assert len(client.uploads)==writes
+
+
+def test_redeploy_cannot_change_model_even_when_package_and_mocked_program_match(client,monkeypatch):
+    monkeypatch.setattr(work,'agent_package',lambda config:(OLD,{'requirements.txt':REQ}))
+    monkeypatch.setattr(work,'authoring_files',lambda:{'ai_market_intelligence/runtime.py':b'old authoring\n'})
+    monkeypatch.setattr(work,'load_package',lambda *a,**k:NS(pack_sha256='old-pack'))
+    client.settings.agent_model_id='another-model'
+    with pytest.raises(AidpProvisionConflict,match='Redeploy requires'):
+        run(client,'redeploy')
+    assert not client.uploads and not client.refreshes
+
+
+def test_invalid_frozen_target_config_does_not_reach_artifact_writes(client):
+    with pytest.raises(AidpProvisionPending):
+        run(client,max_steps=1)
+    client.saved['maintenance']['target_runtime_config']['research_enabled']=True
+    writes=len(client.uploads)
+    with pytest.raises(AidpProvisionConflict,match='journal is invalid'):
+        run(client)
+    assert len(client.uploads)==writes
+
+
+@pytest.mark.parametrize('side',['before','target'])
+def test_changed_frozen_model_config_is_rejected_before_resume_or_rollback(client,side):
+    with pytest.raises(AidpProvisionPending):
+        run(client,max_steps=1)
+    journal=client.saved['maintenance']
+    config=journal['before_state']['runtime_config'] if side=='before' else journal['target_runtime_config']
+    config['services']['model_id']='tampered-model'
+    writes=len(client.uploads)
+    with pytest.raises(AidpProvisionConflict,match='journal is invalid'):
+        run(client,'rollback')
+    assert len(client.uploads)==writes
+
+
+def test_same_package_model_change_uses_update_and_can_restore_unbound_paused_receipt(client,monkeypatch):
+    client.saved.pop('runtime_config')
+    client.files[AGENT_ROOT+'/agent-manifest.json']=encoded(client._descriptor(client.saved))
+    original_descriptor=client.files[AGENT_ROOT+'/agent-manifest.json']
+    monkeypatch.setattr(work,'load_package',lambda *a,**k:NS(pack_sha256='old-pack'))
+    monkeypatch.setattr(work,'agent_package',lambda config:(encoded(config),{'requirements.txt':REQ}))
+    run(client)
+    assert client.saved['runtime_config']['services']['model_id']=='selected-model'
+    assert client.saved['pack_sha256']=='old-pack'
+    run(client,'rollback')
+    assert 'runtime_config' not in client.saved
+    assert client.files[AGENT_ROOT+'/agent-manifest.json']==original_descriptor
+    assert client.files[AGENT_ROOT+'/market_intelligence.py']==OLD
