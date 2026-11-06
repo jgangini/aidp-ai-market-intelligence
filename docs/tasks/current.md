@@ -6,6 +6,8 @@ Requisitos: plan común coordinado y `docs/migration-assessment.md`, corregidos 
 
 Candidato intermedio publicado en `main`: `31815471c6f7b247ca9d51178ebe9fce0b45fb10`. [CI GitHub aprobada](https://github.com/jgangini/aidp-ai_market-intelligence/actions/runs/42140400696). El remoto fue verificado PRIVATE. Este SHA cierra la extracción inicial, no todo el alcance solicitado.
 
+Candidato de código con lifecycle completo: `4f5133f8e918e7335da4a356735490fc72e1c55c`, publicado y confirmado como `origin/main`. [CI del candidato](https://github.com/jgangini/aidp-ai_market-intelligence/actions/runs/42142255290). Este documento de cierre puede tener un commit posterior sin cambios de código. No se ha publicado release final.
+
 Continuación implementada: update/redeploy y recuperación del candidato nativo anterior mediante journal durable y respaldos exactos, preservando identidades y sesiones. CLI y Deploy Studio exponen las acciones mediante el mismo paquete Python. La validación integrada se detalla abajo; aceptación OCI y gate de arquitectura siguen pendientes.
 
 ## Implementado
@@ -32,4 +34,4 @@ Correcciones verificadas contra el consumidor real: el preflight recibe un ID tr
 
 Codex: GPT-6.1 Sol High -- integración de contratos y recuperación. [Referencia](https://learn.chatgpt.com/docs/models)
 
-El commit candidato se registra al cerrar validación; su SHA no puede incluirse dentro del mismo commit. Consultar `git rev-parse HEAD` y la entrega del chat. El origen y otros destinos permanecen de solo lectura para este trabajo.
+El SHA de código y sus comprobaciones quedan registrados arriba; consultar `git rev-parse HEAD` para el cierre documental posterior y la entrega del chat para el estado final de CI. El origen y otros destinos permanecen de solo lectura para este trabajo.
