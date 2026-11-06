@@ -1,8 +1,16 @@
 # Distribución y verificación
 
-El [repositorio público](https://github.com/jgangini/aidp-ai_market-intelligence) distribuye candidatas inmutables para Deploy Studio. La versión del paquete Python es `0.1.0` y la del paquete AIDP es `2.0.1`. La [release disponible](https://github.com/jgangini/aidp-ai_market-intelligence/releases/tag/v0.1.0-rc.4) utiliza `v0.1.0-rc.4` y el commit exacto `95e5d08513f6c6f26f96e65d87ca6912e02166fd`.
+El [repositorio público](https://github.com/jgangini/aidp-ai_market-intelligence) distribuye candidatas inmutables para Deploy Studio. La versión del paquete Python es `0.1.0` y la del paquete AIDP es `2.0.1`. La [candidata vigente](https://github.com/jgangini/aidp-ai_market-intelligence/releases/tag/v0.1.0-rc.6) utiliza `v0.1.0-rc.6`; su manifiesto de release identifica el commit exacto y la CI de ese SHA. La [release anterior rc.5](https://github.com/jgangini/aidp-ai_market-intelligence/releases/tag/v0.1.0-rc.5) conserva el commit `ce5ae002995b9406e509d427603b8716b5cca63f`.
+
+rc.6 está publicada como prerelease pública e inmutable: release ID `436769686`, commit `93102dfb76da2d0025143a36ecdcf274f36e6e63`, `draft=false`, `prerelease=true`, `immutable=true`. Los cinco assets descargados coinciden byte por byte con los preparados y con los digests públicos; el [registro de rc.6](evidence/release-rc6-validation.md) conserva hashes, CI y límites de aceptación. La publicación no implica merge del PR a main ni aceptación OCI. La revisión Browser de rc.6 sigue pendiente del coordinador tras actualizar la caché que aún mostraba rc.5.
+
+Resource Manager 1.5.x necesita la corrección introducida desde `v0.1.0-rc.5`. rc.4 conserva su requisito `>= 1.7.0` y no se puede inicializar con Terraform 1.5.7. La [comprobación del runtime 1.5.7](evidence/terraform-1.5.7.md) detalla el alcance verificado.
+
+rc.5 introdujo el [formulario declarativo schema 2](deployment.md#formulario-declarativo-de-deploy-studio), que rc.6 conserva. Requiere el motor CTN que valida y renderiza `form.groups` directamente; rc.1–rc.4 siguen inmutables con schema 1 y ese motor las rechaza. El manifiesto y `SHA256SUMS` de cada release identifican su commit y sus cinco assets.
 
 ## Archivos publicados
+
+rc.6 alinea el formulario con Governance: mismo orden/campos/etiquetas/defaults, con nombre propio `aidp_market_intelligence` y token Apify como único campo adicional. El nombre crea el `display_name` real de AIDP; sesión TEST y ECPU permanecen como parámetros avanzados fuera del formulario. rc.5 conserva sus tags/assets inmutables.
 
 | Archivo | Contenido |
 | --- | --- |
@@ -25,13 +33,13 @@ El consumidor admite hasta 250 archivos seleccionados, 10 MiB extraídos y 100 M
 En una carpeta nueva, descarga los cinco assets de la misma release. Comprueba los hashes de `SHA256SUMS` y los tamaños/hashes del manifiesto. Verifica que tag, commit, project_id y versiones correspondan al paquete que instalarás. No mezclar un ZIP de fuente con una wheel o manifiesto de otra release.
 
 ```powershell
-gh release download v0.1.0-rc.4 --repo jgangini/aidp-ai_market-intelligence --dir .local/release-download
+gh release download v0.1.0-rc.6 --repo jgangini/aidp-ai_market-intelligence --dir .local/release-download
 ```
 
-Los assets conservan sus condiciones originales de publicación, incluida la marca histórica `publication_requirements.private=true`; el repositorio y sus descargas son actualmente públicos. Eso no cambia la protección de credenciales, state o recibos operativos.
+Los assets de rc.1–rc.4 conservan sus condiciones originales de publicación, incluida la marca histórica `publication_requirements.private=true`; el repositorio y sus descargas son actualmente públicos. Desde rc.5 se declara esa visibilidad pública. Eso no cambia la protección de credenciales, state o recibos operativos.
 
 ## Alcance de la candidata
 
 La fuente implementa instalación TEST pausada, update/redeploy/rollback y enlace protegido de memoria. Falta aceptar nativamente permisos, el entorno del runner/compute, `vectorDbId` y continuidad/aislamiento de checkpoints. La memoria READY y el probe pausado no prueban inferencia ni calidad de respuestas. El gate Sentrux contra la baseline inicial permanece fallido; no representa una aprobación arquitectónica.
 
-Consulta [despliegue](deployment.md) para instalar y [operación](operations.md) para Resume/recuperación. Los números de pruebas, hashes y registros de publicación se conservan como [evidencia separada](evidence/release-rc4-validation.md); la [auditoría de exposición pública](evidence/publication-audit.md) documenta la revisión de fuente, historial y assets.
+Consulta [despliegue](deployment.md) para instalar y [operación](operations.md) para Resume/recuperación. El manifiesto publicado de rc.6 contiene sus checks, hashes y CI; los registros anteriores se conservan como [evidencia de rc.4](evidence/release-rc4-validation.md). La [auditoría de exposición pública](evidence/publication-audit.md) documenta la revisión de fuente, historial y assets.

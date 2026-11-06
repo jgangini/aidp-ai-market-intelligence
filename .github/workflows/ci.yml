@@ -23,12 +23,16 @@ jobs:
       - run: node --test tests/market-stream.test.mjs
   terraform:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        terraform_version: ['1.5.7', '1.15.6']
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: '1.15.6'
+          terraform_version: ${{ matrix.terraform_version }}
       - run: terraform -chdir=terraform init -backend=false
       - run: terraform -chdir=terraform fmt -check -recursive
       - run: terraform -chdir=terraform validate
-      - run: terraform -chdir=terraform test
+      - if: matrix.terraform_version != '1.5.7'
+        run: terraform -chdir=terraform test
