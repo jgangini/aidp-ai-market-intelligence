@@ -1,46 +1,74 @@
-# Operación y límites del candidato
+# Operación y recuperación
 
-Deploy Studio ejecuta `terraform/hooks/preflight.py` y `post_apply.py` desde el commit fijado. Los contratos usan los archivos privados `DEPLOY_STUDIO_CONTEXT`, `DEPLOY_STUDIO_SECRETS` y `DEPLOY_STUDIO_RESULT` (preflight) o `DEPLOY_STUDIO_OUTPUT` (post-apply). El runner debe tener las dependencias de `uv.lock`; los hooks no instalan paquetes ni ejecutan comandos de shell. No se ha certificado aún ese entorno real.
+Deploy Studio gestiona Terraform y llama a los hooks del paquete fijado por release/commit. La CLI opera una instalación existente. Ambas rutas conservan identidad, recibos y configuración; la investigación permanece pausada en TEST.
 
-El preflight comprueba dominio activo mediante su OCID y endpoint firmado, usuario activo y, para plataforma existente, roles efectivos incluidos grupos/herencia. Comprueba plataforma/workspace exactos, namespace, bucket externo y metadata del modelo, sin inferencia. Para plataforma nueva, el usuario es candidato del dominio: post-apply comprueba el tag `deployment_id`, añade el usuario seleccionado al rol AIDP administrador y lee de nuevo los roles antes de publicar fuentes. El operador sigue firmando las peticiones; no se suplanta al usuario seleccionado. Si OCI no permite esa asignación, la operación se bloquea.
+## Estado y Resume
 
-Apify usa un secreto separado y solo GET de cuenta/actor/build. Los 13 perfiles proceden de `aidp/.../actor_profiles.py`; uno permanece suspendido. Se conservan builds fijados y consultas acotadas. La visibilidad no prueba permiso de ejecución o entitlement: ambos quedan `not_verified`; no se autoriza investigación mediante ese check. Un 401 requiere revisar token; 403, acceso/scopes/restricciones; 404 significa ausente o no visible; 429/timeout, verificación indeterminada. Revalidar al cambiar credencial/actores y antes de autorizar el primer trabajo. No se han probado credenciales o actores reales en este candidato.
+El instalador guarda su recibo v2 en `/Workspace/.control/modules/ai_market_intelligence/installer.json` y publica fuentes bajo `/Workspace/.artifact/ai_market_intelligence`. El avance recorre verificación, credenciales, compute, archivos, agente, permisos y TEST. Post-apply avanza como máximo 80 pasos por invocación.
 
-El post-apply avanza como máximo 80 pasos. El ID durable real de Deploy Studio tiene forma `dep_<16hex>`; se deriva un operation_id UUID5 determinista del ID completo y del namespace del producto, conservado al Resume en el recibo v2. El identificador transitorio `preflight-<12hex>` no puede iniciar instalaciones ni convertirse en una variable Terraform de propiedad. Una respuesta incierta nunca inicia otra operación ni reemplaza compute/agente/credencial. Estados pendientes se reanudan con la misma instalación y paquete; un error o acción requerida conserva recursos y detiene el hook. La observación no muta. Estado TEST ACTIVE e Installed Paused son compatibles.
+Una operación pendiente se reanuda con el mismo despliegue, release, administrador y destino. El ID durable `dep_<16hex>` determina el UUID original de instalación; el ID transitorio de preflight no puede sustituirlo. No iniciar otra instalación ni borrar recibos para resolver un timeout. El modelo guardado en `runtime_config` se conserva aunque cambie la selección actual del formulario.
 
-La exclusión entre procesos usa lock en el bucket de artefactos por plataforma/workspace: creación `If-None-Match: *` y liberación con ETag exacto. No hay expiración ni takeover ciego. Un proceso terminado de forma incierta deja el lock; el operador debe comprobar que no sigue ejecutándose. Entonces puede usar `aidp-market release-lock --settings <archivo-privado> --expected-etag <etag> --confirm-no-running-hook --apply`, que revalida administrador y hace borrado condicional. Nunca liberar por coincidencia de nombre o sustituir un ETag obsoleto. El lock exige permisos Object Storage; no se afirma que estén validados por tests con mocks.
+La observación del estado no instala recursos. `status` informa el modelo guardado; el output `configured_agent_model_id` del hook tras update/redeploy/rollback puede estar vacío y no debe interpretarse como pérdida de configuración. TEST ACTIVE e investigación pausada son estados compatibles. El probe exige fuente y sesión exactas y cero llamadas modelo/Apify; no verifica la continuidad del checkpointer ni la calidad de las respuestas.
 
-Este lock excluye únicamente ejecuciones con el mismo binding de bucket. No acredita exclusión global si dos configuraciones apuntan al mismo workspace con buckets diferentes: no se admite cambiar ese binding ni ejecutar esas configuraciones en paralelo. El coordinador debe serializar todas las operaciones sobre el workspace. Un binding autoritativo con CAS nativo entre buckets queda pendiente; los tests no ocultan esta limitación.
+## Acciones de mantenimiento
 
-CLI nativo: `aidp-market status --settings <archivo-privado>` observa; `aidp-market install --settings <archivo-privado> --operation-id <uuid> --token-file <archivo-privado> --apply` instala/reanuda sobre destino existente con roles ya válidos. Settings declara `oci_config_file`, `aidp_region`, `aidp_platform_id`, `aidp_workspace_key` o nombre exacto de plataforma nueva, `compartment_id`, `objectstorage_namespace`, `artifacts_bucket_name`, `agent_model_id`, `identity_domain_id`, `admin_user_ocid`. No pasar tokens por argumentos ni pegar settings/recibos en logs. La creación de plataforma y asignación inicial pertenecen a Deploy Studio/post-apply.
+| Acción | Comportamiento |
+| --- | --- |
+| `install` | Instala o reanuda el agente TEST de esta instalación. |
+| `update` | Congela paquete/configuración objetivo, respalda el anterior y publica otra revisión TEST. |
+| `redeploy` | Redespliega el mismo paquete y configuración; un cambio de modelo requiere update. |
+| `rollback` | Restaura el candidato y configuración anteriores registrados. |
 
-## Actualización, redespliegue y recuperación
+El mantenimiento requiere instalación ready del mismo propietario, AIDP/workspace, agente, compute y credenciales. En una solicitud nueva de Deploy Studio se seleccionan **AIDP, bucket y base existing**. El stack original conserva la propiedad; no convertir sus selectores para simular una transferencia de state. Un despliegue PROD que comparta las fuentes bloquea su modificación.
 
-`lifecycle_action` en Deploy Studio elige install/update/redeploy/rollback. Las acciones de mantenimiento actúan sobre una instalación ready del mismo usuario, plataforma/workspace, agente, compute y credenciales; nunca recrean recursos ni adoptan por nombre. Una nueva solicitud de mantenimiento del runner actual debe seleccionar AIDP y bucket **existing**, con referencias exactas y recibo del administrador: así su plan no crea recursos antes de ejecutar el hook. El stack que creó los recursos sigue siendo su propietario; esta nueva solicitud solo los referencia, sin importar su state. No cambiar selectores new/existing dentro de aquel stack original para simular la transición. El hook también puede actuar con outputs de un stack existente cuya propiedad se conserva, pero esa ruta de reutilización del runner requiere integración coordinada. Un deploy previo de PROD que comparta esas fuentes bloquea su modificación.
+Update/redeploy derivan una operación del despliegue durable, acción, hash del paquete y digest del modelo. `operation_request_id` permite otro UUID explícito para una nueva solicitud; conservarlo durante Resume. La sesión TEST se reutiliza y contrasta con agente, compute y endpoint. No se crean sesiones nuevas ni se reinician investigaciones, checkpoints o gasto para actualizar.
 
-El operation_id de mantenimiento es independiente del UUID original de instalación. Update/redeploy lo derivan del deployment durable completo, acción y hash del paquete. `operation_request_id` puede aportar un UUID explícito para una nueva solicitud sobre los mismos bytes; reutilizarlo reanuda la operación, no inicia otra. Rollback exige el UUID de la operación guardada (si el formulario queda vacío, usa la última registrada). El cliente CLI usa `aidp-market update|redeploy|rollback --settings <archivo-privado> --operation-id <uuid> --token-file <archivo-privado> --apply`. Apify se revalida solo en lectura y el usuario se revalida antes de cada avance.
+El journal guarda respaldos exactos, hashes y estados anterior/objetivo antes de sobrescribir archivos. Solo acepta bytes conocidos; drift ajeno bloquea. El refresh se registra antes de enviarse y una respuesta incierta se reconcilia en lugar de duplicarse. La nueva revisión debe estar ACTIVE y superar el probe antes de confirmar el recibo. Un fallo confirmado restaura el anterior.
 
-Rollback explícito no requiere token Apify, ni disponibilidad de Apify o metadata del modelo: restaura artefactos pausados ya registrados y verifica identidad/permisos/recursos/TEST. Omitir `--token-file` en esa acción. Install/update/redeploy sí exigen el secreto y sus lecturas de preflight; que el formulario lo marque opcional permite recuperar cuando un proveedor está caído, no evita la validación obligatoria de las demás acciones.
+Si update/redeploy termina `rolled_back`, esa actualización sigue fallida y devuelve error. Un rollback solicitado y verificado sí puede cerrar correctamente. Rollback no necesita token ni disponibilidad de Apify o metadata del modelo; en Deploy Studio conserva las verificaciones de identidad, infraestructura y asociación de memoria.
 
-El journal de mantenimiento guarda fase, intención de refresh, hashes y estado anterior. Primero persiste y verifica respaldos exactos de fuentes/dependencias/descriptor, y el candidato objetivo, bajo el control de la operación. Solo después reemplaza archivos gestionados, aceptando únicamente bytes anteriores u objetivo conocidos; drift ajeno bloquea sin borrarlo. El refresh conserva agente/compute y TEST, con intención durable antes del envío; una respuesta incierta se observa en lugar de reenviarla ciegamente. La sesión existente se mantiene y se verifica contra agente, compute y endpoint: no se resetean memoria, investigaciones, checkpoints ni gasto.
+## Memoria: rechazo confirmado o resultado incierto
 
-La nueva revisión debe estar ACTIVE, tener identidad distinta de la previa y superar inspect_runtime con fuente exacta y cero llamadas de modelo/Apify. Solo entonces se actualiza el recibo canónico. Un fallo confirmado de candidato restaura y verifica los artefactos previos mediante sus propias fases e intención de refresh. Transporte incierto mantiene la operación pendiente; no se inventa éxito ni se duplica el envío. Un update/redeploy que termina restaurado informa `rolled_back` y código de fallo: recuperar el anterior no convierte en exitoso el cambio solicitado. Una solicitud explícita de rollback verificada sí cierra esa acción. La observación pública omite respaldos/diagnósticos privados y no entrega un endpoint aceptado mientras exista mantenimiento incompleto.
+Antes de habilitar AI, el hook revalida al administrador y reserva una intención en `control/ai_market_intelligence/memory/<hash-plataforma>.json` del bucket de artefactos. Guarda operación, plataforma, base, binding e intento; no guarda ADMIN. El POST usa el ETag de AIDP y desactiva reintentos automáticos.
 
-Estas rutas requieren aceptación nativa del coordinador antes de publicación. Sus pruebas locales usan servicios simulados y no certifican comportamiento real de una versión OCI no observada.
+| Situación | Respuesta operativa |
+| --- | --- |
+| READY y `vectorDbId` coincide | Reutilizar la asociación, sin otro POST ni contraseña ADMIN. |
+| ENABLING con la base esperada | Esperar y reanudar el mismo despliegue. |
+| Asociación ausente, otra base, estado desconocido/FAILED | Conservar recursos y revisar la configuración nativa; no sustituir la memoria. |
+| HTTP 400/401/403/404/412 confirmado | La intención queda rejected mediante CAS. Corregir parámetros/ADMIN/permisos y reanudar la misma operación; se reserva otro intento con ETag y retry token nuevos. |
+| Timeout o 409 sin readback READY exacto | Conservar submitted. Reconciliar la solicitud control-plane y su work request; no repetir ni borrar el marcador como atajo. |
+| Intención ajena, inválida o modificada | Detenerse para reconciliación; no adoptar ni sobrescribirla. |
 
-## Operaciones aún no implementadas
+El mantenimiento no habilita AI ni cambia de base. Rollback del agente conserva el servicio de memoria y los checkpoints. No se deshabilitan AI, retención o compartición de sesiones como parte de una recuperación.
 
-- Publicación PROD, delete y transferencia de state. No hay botón/CLI que simule esos resultados. La actualización de archivos con inventario incompatible requiere un contrato de paquete revisado; no elimina archivos o datos como atajo.
-- Ejecución nativa con el selector genérico de administrador y el runner CloudTechNext: el coordinador implementó `oci_aidp_administrators`, y el manifiesto exacto pasó el parser Pydantic y selección de archive reales. Esto acredita compatibilidad de fuente/contrato, no dependencias del runner, permisos ni recursos nativos.
+## Locks y concurrencia
 
-La separación no cambia propiedad del stack existente. No aplicar variables que conviertan recursos propios a externos ni retirar recursos de un state sin un plan de transición. La política AIDP nueva procede del corte y necesita aceptación IAM/regional real; no es una garantía de mínimos medidos. Los clientes SDK de datos/plataforma/bucket usan la región seleccionada del contexto, aunque el archivo OCI tenga otra región. Durante preflight, `compartment` es string y se contrasta con la identidad firmada del compartimento de AIDP existente; post-apply recibe `{id,name}`. Un AIDP existente no se mueve a un compartimento nuevo.
+Instalación/mantenimiento usan un lock Object Storage por plataforma/workspace dentro del bucket configurado: creación `If-None-Match: *`, liberación con ETag exacto, sin expiración ni takeover automático.
 
-## Fronteras de confianza
+Si queda un lock tras un proceso incierto, confirma que no haya un hook ejecutándose y consulta su ETag. La CLI `release-lock` exige `--expected-etag`, `--confirm-no-running-hook` y `--apply`, y vuelve a validar al administrador. No liberar por nombre ni con un ETag obsoleto.
 
-La habilitación de memoria escribe primero una intención condicional en `control/ai_market_intelligence/memory/<hash-plataforma>.json` del bucket de artefactos. Guarda plataforma, base, operación, binding y número de intento; ninguna contraseña. Tras timeout o resultado incierto no se repite el POST: Resume solo continúa cuando un GET verifica READY y la asociación exacta. ENABLING queda pendiente. Si permanece DISABLED con una intención submitted, el operador debe reconciliar la solicitud control-plane y su work request; no borrar el marcador como atajo.
+Dos configuraciones con distintos buckets no comparten ese lock, aunque apunten al mismo workspace. Conservar el binding de bucket y serializar externamente todas las operaciones sobre el workspace. La exclusión global entre buckets no está implementada.
 
-Un rechazo confirmado HTTP 400/401/403/404/412 se registra como rejected mediante el ETag de la intención. Corregir la entrada protegida y reanudar la misma operación permite reservar el siguiente intento con CAS y nuevo retry token. Un 409 necesita readback READY exacto; no se transforma en éxito por sí mismo. Una intención ajena, inválida o modificada bloquea el reintento. La escritura concurrente de otro módulo se resuelve con el ETag de AIDP y readback; el coordinador mantiene la serialización global.
+## CLI sobre un destino existente
 
-Los mantenimientos reutilizan AIDP, bucket y base; no habilitan AI ni crean memoria. Rollback del agente restaura fuentes/configuración, conserva los checkpoints y no revierte el servicio compartido. Un mantenimiento ya iniciado con una release anterior se reanuda con esa fuente fijada: no se cambia el formato del journal a mitad de operación. Los recibos v2 previos sin binding de modelo conservan su configuración pausada original hasta un update explícito.
+`Settings` acepta `oci_config_file`, `aidp_region`, `aidp_platform_id`, `aidp_workspace_key`/`aidp_workspace_name`, `compartment_id`, `objectstorage_namespace`, `artifacts_bucket_name`, `agent_model_id`, `identity_domain_id` y `admin_user_ocid`. Guarda el archivo fuera de Git y usa referencias exactas.
 
-Entradas del runner se validan antes de actuar; identidad del usuario no equivale a autoridad del firmante. La URL del dominio se obtiene de OCI, las URLs de Apify son fijas y se rechazan redirects; el transporte AIDP firma solo endpoints regionales y no sigue redirecciones. Los errores del hook no serializan bodies de SDK/validadores. Los resultados de investigación no son código ejecutable y conservan su protocolo de evidencia. Los límites conocidos restantes son el entorno nativo no comprobado, locks abandonados que requieren reconciliación explícita y protocolo de actualización pendiente.
+```powershell
+uv run aidp-market --help
+uv run aidp-market status --settings .local/market-settings.json
+```
+
+`status` consulta OCI y revalida permisos. La CLI no crea plataforma/base ni prepara o comprueba la asociación de memoria: esa responsabilidad corresponde al despliegue o a la configuración nativa autorizada antes de usarla.
+
+Install/update/redeploy requieren `--operation-id` con UUID canónico, `--token-file` con la ruta al secreto Apify y `--apply`; `--test-session-id` selecciona una sesión existente cuando corresponde. Rollback usa UUID y `--apply`, sin token. Mantén los identificadores al reanudar. Nunca pasar el token real como argumento ni pegar settings/recibos en logs.
+
+## Secretos y comprobaciones
+
+El operador sigue firmando; el administrador no se suplanta. Se revalidan dominio, actividad y roles durante los avances. Apify consulta cuenta/actor/build en lectura; 401/403 requieren revisar credencial/acceso y 404 puede indicar ausencia o falta de visibilidad. Las lecturas no prueban entitlement de ejecución. Los errores públicos omiten cuerpos SDK y secretos.
+
+El state/plan de creación puede contener ADMIN pese a `sensitive=true`; mantenerlo en almacenamiento privado. Apify queda fuera de Terraform. Los hooks reciben contexto/secrets por archivos protegidos del runner y no instalan dependencias durante la ejecución.
+
+Para validación local utiliza `scripts/arch-postflight.ps1`: pruebas Python, package-check, protocolo Node, formato/validación/tests Terraform, límites y Sentrux. Requiere proveedores inicializados; no ejecuta apply ni descarga proveedores. Conserva la baseline existente: `arch-preflight.ps1` se detiene si ya existe para impedir sobrescribirla. Las pruebas con mocks no acreditan IAM, red, entorno del compute, asociación real ni persistencia de checkpoints.
+
+No están implementados activar investigación por un comando público, publicación PROD, delete ni transferencia de state. La aceptación nativa, continuidad/aislamiento de memoria y calidad de investigación siguen siendo comprobaciones separadas.
