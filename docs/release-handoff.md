@@ -2,6 +2,8 @@
 
 El [repositorio público](https://github.com/jgangini/aidp-ai_market-intelligence) distribuye candidatas inmutables para Deploy Studio. La versión del paquete Python es `0.1.0` y la del paquete AIDP es `2.0.1`. La nueva [candidata](https://github.com/jgangini/aidp-ai_market-intelligence/releases/tag/v0.1.0-rc.5) utiliza `v0.1.0-rc.5`; su manifiesto de release identifica el commit exacto y la CI de ese SHA. La [release anterior rc.4](https://github.com/jgangini/aidp-ai_market-intelligence/releases/tag/v0.1.0-rc.4) conserva el commit `95e5d08513f6c6f26f96e65d87ca6912e02166fd`.
 
+rc.5 está publicada como prerelease pública e inmutable: release ID `436600090`, commit `ce5ae002995b9406e509d427603b8716b5cca63f`, `draft=false`, `prerelease=true`, `immutable=true`. Los cinco assets descargados coinciden byte por byte con los preparados y con los digests públicos; el [registro de rc.5](evidence/release-rc5-validation.md) conserva hashes, CI y límites de aceptación. La publicación no implica merge del PR a main ni aceptación OCI.
+
 Resource Manager 1.5.x necesita la corrección de compatibilidad de `v0.1.0-rc.5`. rc.4 conserva su requisito `>= 1.7.0` y no se puede inicializar con Terraform 1.5.7. La [comprobación del runtime 1.5.7](evidence/terraform-1.5.7.md) detalla el alcance verificado.
 
 La misma candidata `v0.1.0-rc.5` incorpora el [formulario declarativo schema 2](deployment.md#formulario-declarativo-de-deploy-studio). Requiere el motor CTN que valida y renderiza `form.groups` directamente; las releases anteriores siguen inmutables con schema 1 y ese motor las rechaza. El manifiesto y `SHA256SUMS` de la nueva release identifican su commit y sus cinco assets. La publicación de esta candidata no acredita aceptación OCI ni revisión Browser.

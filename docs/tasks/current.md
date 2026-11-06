@@ -3,6 +3,8 @@
 Fecha: 2026-11-05. Repositorio: `jgangini/aidp-ai_market-intelligence`.
 Estado actual: **PUBLIC**, por autorización explícita posterior del usuario para los tres proyectos, tras auditoría de fuente/historial/releases. Las referencias a publicación privada en los registros siguientes describen su estado histórico; los assets inmutables no se modifican.
 
+Release vigente, verificada el 2026-11-06: [v0.1.0-rc.5](https://github.com/jgangini/aidp-ai_market-intelligence/releases/tag/v0.1.0-rc.5), commit `ce5ae002995b9406e509d427603b8716b5cca63f`, release ID `436600090`, pública, prerelease e inmutable. Cinco assets descargados idénticos, digests/checksums verificados y CI del SHA aprobada. Incluye formulario schema 2 sin fallback, región a ancho completo, generador ADMIN solo para base nueva y compatibilidad Terraform 1.5.7. Suites previas: 1384 Python, ocho protocolo y once Terraform mocks aprobados; gate Sentrux heredado fallido, sin reglas ni nueva degradación. [Evidencia completa](../evidence/release-rc5-validation.md). La publicación fue realizada por el coordinador; este cierre solo verifica y documenta. No implica merge a main ni aceptación OCI; se espera el motor CTN antes de pruebas nativas. Los registros siguientes conservan la historia de candidatas anteriores.
+
 Fuente de extracción: `3c82617fd298933995e954955841007253cc0985` (Starter Kits v4.0.11).
 Requisitos: plan común coordinado y `docs/migration-assessment.md`, corregidos a producto sin portal.
 
@@ -18,7 +20,7 @@ Candidato base con lifecycle completo: `4f5133f8e918e7335da4a356735490fc72e1c55c
 
 Continuación implementada: update/redeploy y recuperación del candidato nativo anterior mediante journal durable y respaldos exactos, preservando identidades y sesiones. CLI y Deploy Studio exponen las acciones mediante el mismo paquete Python. La validación integrada se detalla abajo; aceptación OCI y gate de arquitectura siguen pendientes.
 
-Release vigente: [v0.1.0-rc.4](https://github.com/jgangini/aidp-ai_market-intelligence/releases/tag/v0.1.0-rc.4), SHA `95e5d08513f6c6f26f96e65d87ca6912e02166fd`, ID `436068258`, prerelease/inmutable y actualmente accesible en el repositorio público. Cinco assets descargados idénticos, checksums/digests verificados; rc.1–rc.3 preservadas. [CI exacta aprobada](https://github.com/jgangini/aidp-ai_market-intelligence/actions/runs/42156728701). Parser: 74 archivos/886092 bytes; 310 payloads escaneados. [Handoff vigente](../release-handoff.md).
+Release anterior: [v0.1.0-rc.4](https://github.com/jgangini/aidp-ai_market-intelligence/releases/tag/v0.1.0-rc.4), SHA `95e5d08513f6c6f26f96e65d87ca6912e02166fd`, ID `436068258`, prerelease/inmutable y actualmente accesible en el repositorio público. Cinco assets descargados idénticos, checksums/digests verificados; rc.1–rc.3 preservadas. [CI exacta aprobada](https://github.com/jgangini/aidp-ai_market-intelligence/actions/runs/42156728701). Parser: 74 archivos/886092 bytes; 310 payloads escaneados. [Handoff vigente](../release-handoff.md).
 
 ## Actualización de formulario, modelo y memoria
 
