@@ -25,7 +25,7 @@ Los recursos nuevos se vinculan al despliegue mediante `deployment_binding`, cal
 ### Instalación nueva
 
 1. Selecciona proyecto y release, carga la configuración OCI mediante el flujo protegido de Deploy Studio y elige región/compartment compatibles.
-2. En Workbench selecciona `aidp_mode=new`; no arrastres OCID ni workspace de otra plataforma.
+2. En Workbench selecciona `aidp_mode=new` y el nombre de la plataforma, inicialmente `aidp_market_intelligence`; no arrastres OCID ni workspace de otra plataforma. Terraform utiliza ese valor como `display_name` real. El workspace mantiene su nombre interno estable y el instalador resuelve su clave nativa exacta.
 3. Selecciona dominio, administrador, modelo y los modos de bucket/base. Crear memoria requiere ADMIN.
 4. Ejecuta preflight, revisa sus eventos y el plan Terraform. Autoriza apply únicamente para los recursos deseados.
 5. Post-apply verifica recursos y propiedad, enlaza memoria, instala credenciales/fuentes/compute y comprueba TEST. Si queda pendiente, conserva el despliegue y usa Resume.
@@ -45,21 +45,24 @@ El formulario realiza instalación/Resume con `install` como valor predeterminad
 | Grupo / campos | Uso |
 | --- | --- |
 | Workbench: `aidp_mode` | Crear o seleccionar una plataforma ACTIVE. |
+| `new_aidp_name` | New AIDP name, inicialmente `aidp_market_intelligence`, solo al crear; llega al recurso AIDP de Terraform. |
 | `existing_ai_data_platform_ocid`, `existing_workspace_key` | Referencias exactas requeridas en modo existing. |
-| `test_session_id` | Sesión TEST existente opcional para reanudar; conservarla al continuar. |
 | Identidad: `identity_domain_id`, `admin_user_ocid` | Dominio y propietario elegibles, revalidados server-side. |
-| Artefactos: `artifacts_bucket_mode` | Create new bucket o Use existing bucket. |
+| Artefactos: `artifacts_bucket_mode` | Create new bucket o Use existing bucket; inicialmente existing, igual que Governance. |
 | `artifacts_bucket_name` | Nombre exacto para crear un bucket nuevo. |
 | `existing_artifacts_bucket_name` | Selector `oci_active_buckets` para reutilizar un bucket; preflight resuelve su nombre canónico para Terraform y los hooks. |
-| Enterprise AI: `agent_model_id` | Modelo OCI ACTIVE guardado en el runtime pausado. |
+| Enterprise AI: `agent_model_id` | Modelo OCI ACTIVE guardado en el runtime pausado; misma preferencia `xai.grok-4.7` que Governance. CTN resuelve esa preferencia al OCID disponible antes de enviar la selección. |
 | `apify_token` | Secreto para install/update/redeploy; rollback no lo utiliza. |
 | Memoria: `autonomous_database_mode` | Crear o reutilizar Autonomous. |
 | `autonomous_database_version`, `autonomous_database_workload` | Perfil 26ai DW. |
-| `autonomous_database_compute_count` | Entero entre 2 y 512 ECPU, por defecto 4; para base nueva. |
 | `existing_autonomous_database_ocid` | Selector Existing Autonomous Database (`oci_autonomous_databases`); conserva OCID exacto y validación 26ai DW. |
 | `autonomous_database_admin_password` | ADMIN protegido para creación o habilitación AI; puede omitirse al reutilizar una asociación READY exacta. |
 
 Deploy Studio aporta tenancy, región, compartment y sufijo del despliegue. Preflight obtiene home region, endpoint del dominio y namespace desde OCI; no acepta un endpoint de identidad arbitrario del navegador.
+
+El formulario mantiene el mismo orden, campos visibles, etiquetas y valores iniciales que Governance, salvo el nombre propio de Market y el token Apify junto a Select Model. El perfil visible es `Oracle AI Database 26ai · AI Lakehouse (DW)`. Los nombres internos de parámetros conservan los bindings de Market. `test_session_id` y `autonomous_database_compute_count` no aparecen ni se aceptan como campos del formulario: Terraform conserva sus defaults `""` y `4`. Sin UUID explícito, el hook entrega `None` al instalador y Resume conserva la sesión registrada. La CLI y Terraform directo mantienen sus parámetros avanzados.
+
+Apify aporta datos web y sociales mediante Actors que el agente usa para investigación con evidencias. El token se obtiene en Apify Console → Settings → API & Integrations ([documentación oficial](https://docs.apify.com/integrations/api), [ajustes de cuenta](https://help.apify.com/en/articles/13929475-account-settings)). Preflight consulta la cuenta y la visibilidad de Actors/builds configurados, sin iniciar runs. Esto no acredita permisos de ejecución, suscripción ni acceso de pago. La investigación permanece pausada y el token sigue por el canal protegido.
 
 ## Identidad y secretos
 

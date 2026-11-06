@@ -35,6 +35,16 @@ variable "aidp_mode" {
   }
 }
 
+variable "new_aidp_name" {
+  type        = string
+  default     = "aidp_market_intelligence"
+  description = "Display name for a new AIDP; existing platforms remain bound by OCID."
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._ -]{0,254}$", var.new_aidp_name))
+    error_message = "new_aidp_name must contain 1-255 characters, starting with a letter or digit and using letters, digits, spaces, dots, underscores or hyphens."
+  }
+}
+
 variable "existing_ai_data_platform_ocid" {
   type    = string
   default = ""

@@ -22,7 +22,7 @@
   },
   "presentation": {
     "title": "AIDP AI Market Intelligence",
-    "summary": "Deploys the Market Intelligence research agent, dedicated AI Compute and protected source credentials in Oracle AIDP Workbench. Includes web and social source connectors, evidence-linked responses, and installation, update and recovery hooks for Deploy Studio.",
+    "summary": "Deploys a Market Intelligence agent in Oracle AIDP Workbench with protected memory and a selected model. Apify supplies web and social data through Actors used by the agent for evidence-linked research. Get your token in Apify Console → Settings → API & Integrations. Preflight checks account and configured Actor/build visibility without starting runs; execution permissions and paid access remain unverified. Research starts paused.",
     "tags": [
       "AI Data Platform Workbench",
       "Market Intelligence",
@@ -50,31 +50,48 @@
             "label": "Use existing AIDP"
           }
         ],
-        "group": "aidp_platform"
+        "group": "aidp_platform",
+        "span": 1
+      },
+      {
+        "name": "new_aidp_name",
+        "label": "New AIDP name",
+        "type": "text",
+        "required": true,
+        "default": "aidp_market_intelligence",
+        "min_length": 1,
+        "max_length": 255,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._ -]{0,254}$",
+        "span": 1,
+        "group": "aidp_platform",
+        "visible_when": {
+          "field": "aidp_mode",
+          "equals": "new"
+        }
       },
       {
         "name": "existing_ai_data_platform_ocid",
         "label": "Existing AIDP",
         "type": "select",
+        "options_source": "oci_aidp_platforms",
         "required": true,
-        "pattern": "^ocid1\\.aidataplatform\\.[^\\s]+$",
         "visible_when": {
           "field": "aidp_mode",
           "equals": "existing"
         },
-        "group": "aidp_platform",
-        "options_source": "oci_aidp_platforms"
+        "pattern": "^ocid1\\.aidataplatform\\.[^\\s]+$",
+        "group": "aidp_platform"
       },
       {
         "name": "existing_workspace_key",
         "label": "Existing workspace",
         "type": "select",
         "required": true,
-        "pattern": "^[A-Za-z0-9_-]{1,128}$",
         "visible_when": {
           "field": "aidp_mode",
           "equals": "existing"
         },
+        "pattern": "^[A-Za-z0-9_-]{1,128}$",
         "group": "aidp_platform",
         "options_source": "oci_aidp_workspaces"
       },
@@ -82,33 +99,25 @@
         "name": "identity_domain_id",
         "label": "Identity Domain",
         "type": "select",
-        "options_source": "oci_identity_domains",
         "required": true,
+        "options_source": "oci_identity_domains",
         "pattern": "^ocid1\\.domain\\.[^\\s]+$",
         "group": "identity"
       },
       {
         "name": "admin_user_ocid",
-        "label": "Administrator (new: assign; existing: verify roles)",
+        "label": "AIDP administrator",
         "type": "select",
         "required": true,
         "options_source": "oci_aidp_administrators",
         "group": "identity"
       },
       {
-        "name": "agent_model_id",
-        "label": "Select Model",
-        "type": "select",
-        "required": true,
-        "options_source": "oci_genai_chat_models",
-        "group": "enterprise_ai"
-      },
-      {
         "name": "artifacts_bucket_mode",
         "label": "Artifacts bucket mode",
         "type": "select",
         "required": true,
-        "default": "new",
+        "default": "existing",
         "options": [
           {
             "value": "new",
@@ -127,6 +136,8 @@
         "type": "text",
         "required": true,
         "pattern": "^[A-Za-z0-9_.-]{1,256}$",
+        "min_length": 1,
+        "max_length": 128,
         "group": "artifacts",
         "visible_when": {
           "field": "artifacts_bucket_mode",
@@ -137,14 +148,25 @@
         "name": "existing_artifacts_bucket_name",
         "label": "Existing artifacts bucket",
         "type": "select",
-        "required": true,
         "options_source": "oci_active_buckets",
-        "pattern": "^[A-Za-z0-9_.-]{1,256}$",
-        "group": "artifacts",
+        "required": true,
         "visible_when": {
           "field": "artifacts_bucket_mode",
           "equals": "existing"
-        }
+        },
+        "pattern": "^[A-Za-z0-9_.-]{1,256}$",
+        "min_length": 1,
+        "max_length": 128,
+        "group": "artifacts"
+      },
+      {
+        "name": "agent_model_id",
+        "label": "Select Model",
+        "type": "select",
+        "required": true,
+        "default": "xai.grok-4.7",
+        "options_source": "oci_genai_chat_models",
+        "group": "enterprise_ai"
       },
       {
         "name": "apify_token",
@@ -158,21 +180,11 @@
         "group": "enterprise_ai"
       },
       {
-        "name": "test_session_id",
-        "label": "Existing bound TEST session UUID (optional)",
-        "type": "text",
-        "required": false,
-        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-        "max_length": 36,
-        "group": "aidp_platform"
-      },
-      {
         "name": "autonomous_database_mode",
         "label": "Database mode",
         "type": "select",
         "required": true,
         "default": "new",
-        "group": "database",
         "options": [
           {
             "value": "new",
@@ -182,7 +194,8 @@
             "value": "existing",
             "label": "Use existing database"
           }
-        ]
+        ],
+        "group": "database"
       },
       {
         "name": "autonomous_database_version",
@@ -190,59 +203,47 @@
         "type": "select",
         "required": true,
         "default": "26ai:DW",
-        "group": "database",
         "transform": "database_profile",
         "options": [
           {
             "value": "26ai:DW",
-            "label": "Oracle AI Database 26ai · Autonomous AI Lakehouse"
+            "label": "Oracle AI Database 26ai · AI Lakehouse (DW)"
           }
         ],
         "visible_when": {
           "field": "autonomous_database_mode",
           "equals": "new"
-        }
-      },
-      {
-        "name": "autonomous_database_compute_count",
-        "label": "Memory database ECPUs",
-        "type": "number",
-        "required": true,
-        "default": 4,
-        "group": "database",
-        "visible_when": {
-          "field": "autonomous_database_mode",
-          "equals": "new"
-        }
+        },
+        "group": "database"
       },
       {
         "name": "existing_autonomous_database_ocid",
         "label": "Existing Autonomous Database",
         "type": "select",
         "required": true,
-        "group": "database",
         "pattern": "^ocid1\\.autonomousdatabase\\.[^\\s]+$",
         "visible_when": {
           "field": "autonomous_database_mode",
           "equals": "existing"
         },
+        "group": "database",
         "options_source": "oci_autonomous_databases"
       },
       {
         "name": "autonomous_database_admin_password",
         "label": "Database admin password",
         "type": "password",
+        "required": false,
         "secret": true,
+        "min_length": 12,
+        "max_length": 30,
+        "group": "database",
         "generate_password": true,
         "generate_password_when": {
           "field": "autonomous_database_mode",
           "equals": "new"
         },
-        "required": false,
-        "transform": "none",
-        "min_length": 12,
-        "max_length": 30,
-        "group": "database"
+        "transform": "none"
       }
     ],
     "groups": [
@@ -326,17 +327,17 @@
           },
           {
             "kind": "field",
+            "name": "new_aidp_name",
+            "span": 1
+          },
+          {
+            "kind": "field",
             "name": "existing_ai_data_platform_ocid",
             "span": 1
           },
           {
             "kind": "field",
             "name": "existing_workspace_key",
-            "span": 1
-          },
-          {
-            "kind": "field",
-            "name": "test_session_id",
             "span": 1
           }
         ]
@@ -390,11 +391,6 @@
           {
             "kind": "field",
             "name": "autonomous_database_version",
-            "span": 1
-          },
-          {
-            "kind": "field",
-            "name": "autonomous_database_compute_count",
             "span": 1
           },
           {

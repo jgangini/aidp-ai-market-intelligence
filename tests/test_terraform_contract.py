@@ -49,6 +49,23 @@ def test_declarative_credentials_and_destination_controls_match_capabilities():
     assert MANIFEST["capabilities"]["existing_database_wallet"] == "none"
 
 
+def test_visible_form_matches_governance_layout_except_apify():
+    groups = {g['id']: [i['name'] for i in g['items']] for g in MANIFEST['form']['groups']}
+    assert groups['aidp_platform'] == ['aidp_mode', 'new_aidp_name', 'existing_ai_data_platform_ocid', 'existing_workspace_key']
+    assert groups['enterprise_ai'] == ['agent_model_id', 'apify_token']
+    assert groups['artifacts'] == ['artifacts_bucket_mode', 'artifacts_bucket_name', 'existing_artifacts_bucket_name']
+    assert groups['database'] == ['autonomous_database_mode', 'autonomous_database_version', 'existing_autonomous_database_ocid', 'autonomous_database_admin_password']
+    fields = {f['name']: f for f in MANIFEST['form']['fields']}
+    assert len(fields) == 15 and not {'test_session_id', 'autonomous_database_compute_count'} & fields.keys()
+    assert fields['admin_user_ocid']['label'] == 'AIDP administrator'
+    assert fields['new_aidp_name']['default'] == 'aidp_market_intelligence'
+    assert fields['new_aidp_name']['visible_when'] == {'field': 'aidp_mode', 'equals': 'new'}
+    assert fields['artifacts_bucket_mode']['default'] == 'existing'
+    assert fields['agent_model_id']['default'] == 'xai.grok-4.7'
+    assert fields['autonomous_database_version']['options'] == [
+        {'value': '26ai:DW', 'label': 'Oracle AI Database 26ai · AI Lakehouse (DW)'}]
+
+
 def test_apify_secret_cannot_enter_terraform_or_public_outputs():
     fields = {field["name"]: field for field in MANIFEST["form"]["fields"]}
     secret = fields["apify_token"]

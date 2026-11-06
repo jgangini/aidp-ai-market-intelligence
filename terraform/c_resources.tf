@@ -38,7 +38,7 @@ resource "time_sleep" "aidp_iam_propagation" {
 resource "oci_ai_data_platform_ai_data_platform" "market" {
   count                  = var.aidp_mode == "new" ? 1 : 0
   compartment_id         = var.compartment_ocid
-  display_name           = local.name_prefix
+  display_name           = var.new_aidp_name
   default_workspace_name = local.workspace_name
   ai_data_platform_type  = "STRUCTURED"
   is_enable_ai_feature   = false

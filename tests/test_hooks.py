@@ -212,6 +212,7 @@ def test_postapply_binds_exact_owned_bucket_before_install(monkeypatch, foreign_
         assert result['outputs']['operation_id'] == hooks.operation_id(DEPLOYMENT)
         assert install.call_args.args[0].settings.aidp_workspace_key == 'resolved-exact-key'
         assert install.call_args.kwargs['new_platform'] is True
+        assert install.call_args.kwargs['test_session_id'] is None
         assert platform.call_args.kwargs['deployment_binding'] == binding
         memory.assert_called_once()
         assert auth.call_args.kwargs == {'roles_required':False}

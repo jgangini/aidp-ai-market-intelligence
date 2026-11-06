@@ -41,9 +41,40 @@ run "new_resources_are_owned" {
     error_message = "New workspace is resolved after bootstrap; do not fabricate a native key."
   }
   assert {
+    condition     = oci_ai_data_platform_ai_data_platform.market[0].display_name == "aidp_market_intelligence" && oci_database_autonomous_database.memory[0].compute_count == 4 && var.test_session_id == ""
+    error_message = "The visible default name must reach the new platform while advanced memory/session defaults stay safe."
+  }
+  assert {
     condition     = oci_ai_data_platform_ai_data_platform.market[0].freeform_tags.deployment_binding == output.deployment_binding && oci_objectstorage_bucket.artifacts[0].freeform_tags.deployment_binding == output.deployment_binding && output.deployment_binding == sha256(join(":", [var.tenancy_ocid, var.region, var.compartment_ocid, var.deployment_suffix, var.identity_domain_id, var.admin_user_ocid]))
     error_message = "New platform and bucket must bind to the exact tenancy, region, compartment, stable deployment suffix, domain and administrator."
   }
+}
+
+run "custom_platform_name_preserves_native_bindings" {
+  command = plan
+  variables { new_aidp_name = "Market Research 2026" }
+  assert {
+    condition     = oci_ai_data_platform_ai_data_platform.market[0].display_name == "Market Research 2026" && output.workspace_name == run.new_resources_are_owned.workspace_name && output.deployment_binding == run.new_resources_are_owned.deployment_binding
+    error_message = "The submitted name must name the platform without changing the workspace or ownership binding."
+  }
+}
+
+run "platform_name_rejects_empty" {
+  command = plan
+  variables { new_aidp_name = "" }
+  expect_failures = [var.new_aidp_name]
+}
+
+run "platform_name_rejects_invalid_characters" {
+  command = plan
+  variables { new_aidp_name = "../other/platform" }
+  expect_failures = [var.new_aidp_name]
+}
+
+run "platform_name_rejects_excessive_length" {
+  command = plan
+  variables { new_aidp_name = join("", [for i in range(256) : "a"]) }
+  expect_failures = [var.new_aidp_name]
 }
 
 run "memory_requires_creation_password" {

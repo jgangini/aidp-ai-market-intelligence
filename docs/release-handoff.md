@@ -10,6 +10,8 @@ La misma candidata `v0.1.0-rc.5` incorpora el [formulario declarativo schema 2](
 
 ## Archivos publicados
 
+La siguiente candidata, `v0.1.0-rc.6`, prepara la alineación del formulario con Governance: mismo orden/campos/etiquetas/defaults, con nombre propio `aidp_market_intelligence` y token Apify como único campo adicional. El nombre crea el `display_name` real de AIDP; sesión TEST y ECPU permanecen como parámetros avanzados fuera del formulario. rc.5 sigue inmutable y disponible hasta publicar la nueva candidata.
+
 | Archivo | Contenido |
 | --- | --- |
 | `aidp-ai-market-intelligence-source.zip` | Fuente Git con raíz única `source/`, manifiesto Terraform y hooks. |
