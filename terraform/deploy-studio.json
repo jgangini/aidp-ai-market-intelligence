@@ -19,14 +19,16 @@
     ]
   },
   "presentation": {
-    "title": "AI Market Intelligence",
-    "summary": "Installs the evidence-based research agent in AIDP TEST with research paused. No portal VM or paid capture is started.",
+    "title": "AIDP AI Market Intelligence",
+    "summary": "Deploys the Market Intelligence research agent, dedicated AI Compute and protected source credentials in Oracle AIDP Workbench. Includes web and social source connectors, evidence-linked responses, and installation, update and recovery hooks for Deploy Studio.",
     "tags": [
       "AI Data Platform Workbench",
       "Market Intelligence",
       "Apify"
     ],
-    "href": "https://github.com/jgangini/aidp-ai_market-intelligence"
+    "href": "https://github.com/jgangini/aidp-ai_market-intelligence",
+    "image": "/assets/oci-aidp-cloud-migration-lab.png",
+    "image_alt": "AIDP AI Market Intelligence \u2014 Oracle AI Data Platform Workbench"
   },
   "form": {
     "fields": [

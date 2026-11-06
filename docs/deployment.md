@@ -2,6 +2,8 @@
 
 Market se instala desde Deploy Studio mediante paquete Python, hooks y artefactos AIDP. No crea portal, API HTTP permanente, VM, frontend ni contraseña local. El candidato conserva TEST instalado/pausado, sin inferencia ni capturas Apify en la comprobación de instalación.
 
+La ficha visible se llama **AIDP AI Market Intelligence**; el ID técnico sigue siendo `aidp-ai-market-intelligence`. Su descripción presenta agente, AI Compute, credenciales y conectores incluidos, mientras los límites de aceptación permanecen en esta guía y en la release. `presentation.image` reutiliza `/assets/oci-aidp-cloud-migration-lab.png`, asset AIDP ya aprobado y servido desde `app/frontend/public/assets/` de CloudTechNext. El componente `ProjectBrief` usa esa ruta pública local directamente: no es una URL raw de GitHub privado ni requiere token en el navegador. El asset no se copia a este producto ni añade dependencias de runtime; el catálogo de CTN pertenece al coordinador.
+
 ## Contrato del candidato
 
 `terraform/deploy-studio.json` usa schema 1 y proyecto `aidp-ai-market-intelligence`. El campo `admin_user_ocid` usa el origen genérico `oci_aidp_administrators`, cuya integración del consumidor pertenece al coordinador. Preparar el manifiesto no acredita que la versión desplegada de Deploy Studio ya lo acepte: parser y runner reales requieren validación integrada antes de publicar la release.
