@@ -6,6 +6,8 @@ Market se instala desde Deploy Studio mediante paquete Python, hooks y artefacto
 
 `terraform/deploy-studio.json` usa schema 1 y proyecto `aidp-ai-market-intelligence`. El campo `admin_user_ocid` usa el origen genérico `oci_aidp_administrators`, cuya integración del consumidor pertenece al coordinador. Preparar el manifiesto no acredita que la versión desplegada de Deploy Studio ya lo acepte: parser y runner reales requieren validación integrada antes de publicar la release.
 
+El coordinador verificó el candidato `cff62ec` con Settings reales del consumidor: máximo de 250 archivos seleccionados y 10 MiB descomprimidos; el archivo GitHub admite hasta 100 MiB. Market selecciona 72 archivos, 859667 bytes. Ambos hooks importan desde ese árbol aislado en Python 3.12 sin red ni credenciales; esto comprueba empaquetado/importación, no instalación ni permisos OCI.
+
 El operador autorizado firma las peticiones OCI. `admin_user_ocid` selecciona el propietario elegible, no cambia la identidad firmante. Preflight y Resume deben revalidar usuario activo, dominio, destino y permisos efectivos. Para plataforma nueva, el selector admite identidades activas del dominio elegibles para asignación: bootstrap asigna el rol autorizado y comprueba su efectividad antes de publicar archivos/agente. Para plataforma existente se exigen roles efectivos. No se crea otro provisioner ni se solicita contraseña local.
 
 | Input | Uso |
