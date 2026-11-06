@@ -107,7 +107,7 @@
     {
       "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/config.py",
       "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/config.py",
-      "sha256": "0608645831dc425a57c4d052900d175411de670728f64785b3d7a7d27a57e933"
+      "sha256": "5b00b44869af9c08ae29f9813f7460db96a7866b8acc6d95b136a8095da91180"
     },
     {
       "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/connectors.py",
@@ -274,5 +274,5 @@
       "sha256": "02d8ebfd9f19dd08b7c1b47e22137899f29fc525e208cdb88c285492e21ad477"
     }
   ],
-  "pack_sha256": "d0efa328e0097578cff1fbd8c01c762bc5b8424f7400f762cc8fa7390e247006"
+  "pack_sha256": "83b6f4475272b7350de676344f553ff42b925080303dac9979949f01ed2cbcd1"
 }

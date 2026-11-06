@@ -23,12 +23,7 @@ def validate_market_config(config):
             raise ValueError('Research requires explicit authenticated service bindings')
         return config
     if not config['research_enabled'] and isinstance(services,dict) and set(services)==PAUSED_MODEL_FIELDS:
-        for key in PAUSED_MODEL_FIELDS:
-            if (not isinstance(services[key],str) or not 1<=len(services[key])<=256
-                    or any(ord(char)<=32 for char in services[key])):
-                raise ValueError('A bounded paused model reference is required: '+key)
-        if not re.fullmatch(r'[a-z]{2}-[a-z0-9-]+-[0-9]+',services['region']):
-            raise ValueError('A canonical paused model region is required')
+        market_paused_model(services)
         return config
     if not isinstance(services,dict) or set(services)!=SERVICE_FIELDS:
         raise ValueError('Current services require the complete reviewed binding, without SQL fields')
@@ -36,6 +31,16 @@ def validate_market_config(config):
     market_service_sources(services)
     market_service_profile(services['runtime_profile'])
     return config
+
+
+def market_paused_model(services):
+    """Validate saved model references separately from active research services."""
+    for key in PAUSED_MODEL_FIELDS:
+        if (not isinstance(services[key],str) or not 1<=len(services[key])<=256
+                or any(ord(char)<=32 for char in services[key])):
+            raise ValueError('A bounded paused model reference is required: '+key)
+    if not re.fullmatch(r'[a-z]{2}-[a-z0-9-]+-[0-9]+',services['region']):
+        raise ValueError('A canonical paused model region is required')
 
 
 def market_service_references(services):

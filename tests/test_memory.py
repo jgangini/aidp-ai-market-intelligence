@@ -141,7 +141,8 @@ def test_invalid_database_is_rejected_before_enable(native, field, value):
 
 @pytest.mark.parametrize('field', ['deployment_binding', 'compartment_id'])
 def test_new_database_requires_exact_owner(native, field):
-    native.context['inputs']['autonomous_database_mode'] = 'new'
+    native.context['inputs'].update(autonomous_database_mode='new', existing_autonomous_database_ocid='',
+                                     autonomous_database_version='26ai', autonomous_database_workload='DW')
     native.outputs['owned_autonomous_database'] = True
     if field == 'deployment_binding': native.database.freeform_tags[field] = 'foreign'
     else: native.database.compartment_id = 'foreign'
