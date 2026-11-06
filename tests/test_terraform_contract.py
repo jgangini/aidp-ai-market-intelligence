@@ -148,9 +148,10 @@ def test_hook_archive_covers_only_portable_public_sources():
     for relative in includes:
         assert not Path(relative).is_absolute()
         assert not set(Path(relative).parts) & {".oci", ".local", ".git", "apps", "node_modules"}
-    steps = [step["key"] for step in MANIFEST["run_steps"]]
-    assert steps[0] == "queue" and "apply" in steps and steps[-1] == "complete"
-    assert len(steps) == len(set(steps))
+    assert MANIFEST["execution_source"] == "oci_resource_manager"
+    assert [step["key"] for step in MANIFEST["run_steps"]] == [
+        "queue", "credentials", "compartment", "plan", "apply", "application", "complete",
+    ]
 
 
 def test_transient_preflight_id_is_not_persisted_as_deployment_ownership():

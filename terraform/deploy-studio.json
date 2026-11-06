@@ -1,5 +1,6 @@
 {
   "schema_version": 2,
+  "execution_source": "oci_resource_manager",
   "project_id": "aidp-ai-market-intelligence",
   "terraform": {
     "path": "terraform",
