@@ -16,7 +16,7 @@ from .errors import AidpMemoryAssociationConflict, AidpProvisionConflict, AidpPr
 from .lifecycle import install
 from .settings import Settings
 from .memory import preflight_memory, ensure_memory
-from .access import workbench_url
+from .access import agent_hub_url
 
 
 def _outputs(context):
@@ -223,7 +223,7 @@ def post_apply(context, secrets, config_file):
         workspace = client._workspace()
         client.settings = settings.model_copy(update={'aidp_workspace_key': workspace['key']})
         try:
-            navigation_url = workbench_url(client, platform)
+            navigation_url = agent_hub_url(client, platform)
         except (oci.exceptions.ServiceError, oci.exceptions.RequestException, AidpProvisionConflict, ValueError):
             navigation_url = ''
         session = context['inputs'].get('test_session_id') or None
@@ -253,7 +253,7 @@ def post_apply(context, secrets, config_file):
                 'message': ('Candidate update failed; the previous TEST candidate was restored and verified.' if recovered_failure
                             else 'Market lifecycle operation verified in TEST with research paused.')}]
                 + ([] if navigation_url else [{'level': 'warning',
-                    'message': 'Installation result is preserved; the Workbench navigation URL is unavailable.'}])}
+                    'message': 'Installation result is preserved; the Agent Hub navigation URL is unavailable.'}])}
     finally:
         asyncio.run(client.close())
 
