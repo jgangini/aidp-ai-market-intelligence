@@ -85,3 +85,33 @@ def test_identity_endpoint_must_belong_to_active_selected_domain(monkeypatch, do
     monkeypatch.setattr('ai_market_intelligence.authorization.oci.identity.IdentityClient', lambda *a, **kw: iam)
     with pytest.raises(AidpProvisionConflict, match='Identity Domain'):
         resolve_domain(client)
+
+
+@pytest.mark.parametrize('suffix', ['', '/', ':443', ':443/'])
+def test_verified_endpoint_is_canonical_for_deploy_studio(monkeypatch, suffix):
+    client = NS(_oci_config={}, signer=object(), settings=NS(identity_domain_id='ocid1.domain.oc1..selected'))
+    domain = NS(id=client.settings.identity_domain_id, lifecycle_state='ACTIVE',
+                url='https://selected.identity.oraclecloud.com' + suffix)
+    iam = NS(get_domain=Mock(return_value=NS(data=domain)))
+    monkeypatch.setattr('ai_market_intelligence.authorization.oci.identity.IdentityClient', lambda *a, **kw: iam)
+    assert resolve_domain(client) == 'https://selected.identity.oraclecloud.com'
+    iam.get_domain.assert_called_once_with(client.settings.identity_domain_id)
+
+
+@pytest.mark.parametrize('url', [
+    'https://selected.identity.oraclecloud.com/admin/v1',
+    'https://selected.identity.oraclecloud.com//',
+    'https://selected.identity.oraclecloud.com:8443',
+    'https://selected.identity.oraclecloud.com:invalid',
+    'https://selected.identity.oraclecloud.com#fragment',
+    'http://selected.identity.oraclecloud.com',
+    'https://selected.identity.oraclecloud.com.attacker.example',
+    'https://[invalid',
+])
+def test_verified_endpoint_rejects_non_root_and_malformed_urls(monkeypatch, url):
+    client = NS(_oci_config={}, signer=object(), settings=NS(identity_domain_id='ocid1.domain.oc1..selected'))
+    domain = NS(id=client.settings.identity_domain_id, lifecycle_state='ACTIVE', url=url)
+    monkeypatch.setattr('ai_market_intelligence.authorization.oci.identity.IdentityClient',
+                        lambda *a, **kw: NS(get_domain=Mock(return_value=NS(data=domain))))
+    with pytest.raises(AidpProvisionConflict, match='Identity Domain'):
+        resolve_domain(client)

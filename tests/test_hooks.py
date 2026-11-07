@@ -1,6 +1,8 @@
 """Runner contracts and ownership failures without OCI or Apify connections."""
 import json
 import hashlib
+import re
+from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest.mock import Mock
 import pytest
@@ -67,6 +69,18 @@ def test_new_preflight_does_not_consult_nonexistent_aidp_roles(native, monkeypat
     assert 'synthetic-local-preflight-secret' not in json.dumps(result)
     hooks.preflight_memory.assert_called_once()
     assert hooks.preflight_memory.call_args.args[2]['region'] == 'us-chicago-1'
+
+
+def test_signed_domain_endpoint_satisfies_manifest_runtime_contract(native, monkeypatch):
+    from ai_market_intelligence.authorization import resolve_domain
+    native.identity.get_domain.return_value.data = NS(id=DOMAIN, lifecycle_state='ACTIVE',
+        url='https://domain.identity.oraclecloud.com:443/')
+    monkeypatch.setattr(hooks, 'resolve_domain', resolve_domain)
+    result = hooks.preflight(context(), secrets(), 'synthetic-config')
+    manifest = json.loads((Path(__file__).parents[1] / 'terraform/deploy-studio.json').read_text(encoding='utf-8'))
+    endpoint_field = next(field for field in manifest['preflight']['runtime_fields'] if field['name'] == 'identity_domain_url')
+    assert result['inputs']['identity_domain_url'] == 'https://domain.identity.oraclecloud.com'
+    assert re.fullmatch(endpoint_field['pattern'], result['inputs']['identity_domain_url'])
 
 
 def test_existing_preflight_uses_exact_key_and_revalidates_roles(native, monkeypatch):

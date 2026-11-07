@@ -61,6 +61,7 @@ El formulario realiza instalación/Resume con `install` como valor predeterminad
 | `autonomous_database_admin_password` | ADMIN protegido para creación o habilitación AI; puede omitirse al reutilizar una asociación READY exacta. |
 
 Deploy Studio aporta tenancy, región, compartment y sufijo del despliegue. Preflight obtiene home region, endpoint del dominio y namespace desde OCI; no acepta un endpoint de identidad arbitrario del navegador.
+El endpoint HTTPS del dominio activo se normaliza a `https://host`: el puerto estándar `443` y la barra raíz opcional no se transmiten a Terraform. Rutas adicionales, otros puertos, credenciales, consultas y fragmentos se rechazan antes de usar el endpoint.
 
 El formulario mantiene el mismo orden, campos visibles, etiquetas y valores iniciales que Governance, salvo el nombre propio de Market y el token Apify junto a Select Model. El perfil visible es `Oracle AI Database 26ai · AI Lakehouse (DW)`. Los nombres internos de parámetros conservan los bindings de Market. `test_session_id` y `autonomous_database_compute_count` no aparecen ni se aceptan como campos del formulario: Terraform conserva sus defaults `""` y `4`. Sin UUID explícito, el hook entrega `None` al instalador y Resume conserva la sesión registrada. La CLI y Terraform directo mantienen sus parámetros avanzados.
 
