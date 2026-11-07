@@ -440,6 +440,7 @@
     }
   ],
   "outputs": [
+    "application_url",
     "ai_data_platform_ocid",
     "workspace_key",
     "workspace_name",

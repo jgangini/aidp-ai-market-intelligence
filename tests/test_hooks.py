@@ -199,7 +199,8 @@ def test_fresh_maintenance_request_cannot_create_platform_or_bucket(monkeypatch,
 
 
 @pytest.mark.parametrize('foreign_bucket,pending_memory,revoked_admin', [(False,False,False), (True,False,False), (False,True,False), (False,False,True)])
-def test_postapply_binds_exact_owned_bucket_before_install(monkeypatch, foreign_bucket, pending_memory, revoked_admin):
+@pytest.mark.parametrize('unavailable_navigation', [False, True])
+def test_postapply_binds_exact_owned_bucket_before_install(monkeypatch, foreign_bucket, pending_memory, revoked_admin, unavailable_navigation):
     memory = Mock(return_value='ocid1.autonomousdatabase.oc1..synthetic')
     if pending_memory:
         memory.side_effect = AidpProvisionConflict('Memory association is unverified')
@@ -227,6 +228,10 @@ def test_postapply_binds_exact_owned_bucket_before_install(monkeypatch, foreign_
     monkeypatch.setattr(hooks, 'MarketAidpClient', Client)
     platform = Mock()
     monkeypatch.setattr(hooks, '_platform', platform)
+    navigation = Mock(return_value='https://testord.datalake.oci.oraclecloud.com#?tenant=test&domain=Default')
+    if unavailable_navigation:
+        navigation.side_effect = AidpProvisionConflict('Navigation metadata unavailable')
+    monkeypatch.setattr(hooks, 'workbench_url', navigation)
     monkeypatch.setattr(hooks, 'check_apify', lambda token: {'reads_verified': True})
     install = Mock(return_value={'status': 'active', 'phase': 'ready', 'operation_id': hooks.operation_id(DEPLOYMENT)})
     monkeypatch.setattr(hooks, 'install', install)
@@ -247,6 +252,11 @@ def test_postapply_binds_exact_owned_bucket_before_install(monkeypatch, foreign_
     else:
         result = hooks.post_apply(c, secrets(), 'config')
         assert result['outputs']['research_enabled'] is False
+        if unavailable_navigation:
+            assert result['outputs']['application_url'] == ''
+            assert result['events'][-1]['level'] == 'warning'
+        else:
+            assert result['outputs']['application_url'].startswith('https://testord.datalake.oci.oraclecloud.com')
         assert result['outputs']['deployment_surface'] == 'TEST'
         assert result['outputs']['maintenance_action'] == 'install'
         assert result['outputs']['operation_id'] == hooks.operation_id(DEPLOYMENT)

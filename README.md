@@ -29,6 +29,8 @@ Selecciona **AIDP AI Market Intelligence** y una release en Deploy Studio. Elige
 
 Para una plataforma compartida con Governance, conserva su AIDP, workspace, bucket y la base de memoria ya asociada. La [guía de despliegue](docs/deployment.md) explica los parámetros, secretos y comprobaciones de ambos modos.
 
+Al terminar, **Application URL** abre el Workbench de la plataforma verificada con el dominio de inicio de sesión seleccionado. Allí se abre el agente del workspace y su Playground de TEST. El endpoint de API del candidato no es una interfaz web de chat; la publicación y el registro en Agent Hub son operaciones separadas de esta instalación TEST.
+
 ## Desarrollo local
 
 El entorno local validado utiliza Python 3.11 y `uv`; Node ejecuta las pruebas del protocolo de streaming. La infraestructura admite Terraform 1.5.7 de Resource Manager; las pruebas con mocks usan 1.15.6. Terraform requiere los proveedores del lock inicializados.
