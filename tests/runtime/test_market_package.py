@@ -15,7 +15,7 @@ from ai_market_intelligence.installation import agent_package as packaging
 
 def test_package_has_only_current_source_and_real_aidp_resources():
     pack = catalog.load_package('ai_market_intelligence', require_available=False)
-    assert pack.status == 'planned' and pack.pack_version == '2.0.1'
+    assert pack.status == 'planned' and pack.pack_version == '2.0.2'
     with pytest.raises(catalog.PackageError, match='not available yet'):
         catalog.load_package(pack.lab_id)
     assert not pack.datasets and not pack.notebooks and not pack.tables

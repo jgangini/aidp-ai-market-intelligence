@@ -10,6 +10,7 @@ from ai_market_intelligence.runtime.actor_profiles import PROFILES
 
 TOKEN = SecretStr('apify_api_sensitive_token_1234567890')
 PROFILE = {'reviewed': {'actor_id': 'Actor123', 'build': '1.2.3'}}
+PINNED_PROFILE = {'reviewed': {**PROFILE['reviewed'], 'build_id': 'Build123'}}
 
 
 def mock_client(handler):
@@ -18,8 +19,9 @@ def mock_client(handler):
         requests.append(request)
         assert request.method == 'GET'
         assert request.url.scheme == 'https' and request.url.host == 'api.apify.com'
-        assert request.url.path == '/v2/users/me' or request.url.path == '/v2/actors/Actor123' or any(
+        assert request.url.path in {'/v2/users/me', '/v2/actors/Actor123', '/v2/actor-builds/Build123'} or any(
             request.url.path in {'/v2/actors/' + profile['actor_id'], '/v2/actors/' + profile['actor_id'] + '/builds'}
+            or request.url.path == '/v2/actor-builds/' + profile.get('build_id', '')
             for profile in PROFILES.values()) or request.url.path == '/v2/actors/Actor123/builds'
         assert not any(part in request.url.path for part in ('runs', 'run-sync', 'tasks'))
         assert request.headers['Authorization'] == 'Bearer ' + TOKEN.get_secret_value()
@@ -37,6 +39,11 @@ def success(request):
         actor = path.split('/')[-2]
         build = next((p['build'] for p in PROFILES.values() if p['actor_id'] == actor), '1.2.3')
         return httpx.Response(200, json={'data': {'items': [{'buildNumber': build, 'status': 'SUCCEEDED'}]}})
+    if '/actor-builds/' in path:
+        build_id = path.split('/')[-1]
+        profile = next((p for p in PROFILES.values() if p.get('build_id') == build_id), PINNED_PROFILE['reviewed'])
+        return httpx.Response(200, json={'data': {'id': build_id, 'actId': profile['actor_id'],
+            'buildNumber': profile['build'], 'status': 'SUCCEEDED'}})
     return httpx.Response(200, json={'data': {'id': path.split('/')[-1]}})
 
 
@@ -52,7 +59,8 @@ def test_all_canonical_profiles_use_exact_actor_and_build_without_starting_runs(
     expected = ['/v2/users/me']
     for profile in PROFILES.values():
         if not profile.get('unavailable_reason'):
-            expected += ['/v2/actors/' + profile['actor_id'], '/v2/actors/' + profile['actor_id'] + '/builds']
+            expected += ['/v2/actors/' + profile['actor_id'], '/v2/actor-builds/' + profile['build_id']
+                         if 'build_id' in profile else '/v2/actors/' + profile['actor_id'] + '/builds']
     assert [request.url.path for request in requests] == expected
     assert result['account'] == {'status': 'authenticated'}
     assert result['reads_verified'] is True and result['apify_starts'] == 0
@@ -76,6 +84,51 @@ def test_suspended_profile_is_reported_without_actor_or_build_reads():
     assert [r.url.path for r in requests] == ['/v2/users/me']
     assert result['actors'][0]['status'] == 'suspended'
     assert result['actors'][0]['entitlement'] == 'not_verified'
+
+
+@pytest.mark.parametrize('override,expected', [({}, 'visible'), ({'id': 'Foreign'}, 'identity_mismatch'),
+    ({'actId': 'OtherActor'}, 'identity_mismatch'), ({'buildNumber': 'latest'}, 'identity_mismatch'),
+    ({'buildNumber': '1.2.4'}, 'identity_mismatch'), ({'status': 'FAILED'}, 'build_unavailable'),
+    ({'status': None}, 'build_unavailable')])
+def test_exact_build_requires_actor_number_id_and_success_without_listing_history(override, expected):
+    def handler(request):
+        response = success(request)
+        if '/actor-builds/' in request.url.path:
+            return httpx.Response(200, json={'data': {**response.json()['data'], **override}})
+        return response
+    client, requests = mock_client(handler)
+    with client:
+        result = check_apify(TOKEN, client=client, profiles=PINNED_PROFILE)
+    assert [r.url.path for r in requests] == ['/v2/users/me', '/v2/actors/Actor123', '/v2/actor-builds/Build123']
+    assert result['actors'][0]['status'] == expected
+    assert result['reads_verified'] is (expected == 'visible')
+    assert result['execution_permission'] == 'not_verified' and result['apify_starts'] == 0
+
+
+@pytest.mark.parametrize('code', [401, 402, 403, 404, 429, 500])
+def test_exact_build_read_failure_is_redacted_and_never_falls_back(code):
+    def handler(request):
+        if '/actor-builds/' in request.url.path:
+            return httpx.Response(code, json={'error': {'message': TOKEN.get_secret_value()}})
+        return success(request)
+    client, requests = mock_client(handler)
+    with client:
+        result = check_apify(TOKEN, client=client, profiles=PINNED_PROFILE)
+    assert len(requests) == 3 and result['reads_verified'] is False
+    assert result['actors'][0]['http_status'] == code
+    assert TOKEN.get_secret_value() not in json.dumps(result)
+    assert result['apify_starts'] == 0
+
+
+@pytest.mark.parametrize('payload', [None, [], {}, {'id': 'Build123'}])
+def test_exact_build_malformed_metadata_cannot_verify_read(payload):
+    def handler(request):
+        return httpx.Response(200, json={'data': payload}) if '/actor-builds/' in request.url.path else success(request)
+    client, requests = mock_client(handler)
+    with client:
+        result = check_apify(TOKEN, client=client, profiles=PINNED_PROFILE)
+    assert result['reads_verified'] is False and len(requests) == 3
+    assert result['actors'][0]['status'] in {'indeterminate', 'identity_mismatch'}
 
 
 @pytest.mark.parametrize('stage', ['account', 'actor', 'build'])

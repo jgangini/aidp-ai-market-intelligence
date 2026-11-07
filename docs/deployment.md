@@ -67,6 +67,8 @@ El formulario mantiene el mismo orden, campos visibles, etiquetas y valores inic
 
 Apify aporta datos web y sociales mediante Actors que el agente usa para investigación con evidencias. El token se obtiene en Apify Console → Settings → API & Integrations ([documentación oficial](https://docs.apify.com/integrations/api), [ajustes de cuenta](https://help.apify.com/en/articles/13929475-account-settings)). Preflight consulta la cuenta y la visibilidad de Actors/builds configurados, sin iniciar runs. Esto no acredita permisos de ejecución, suscripción ni acceso de pago. La investigación permanece pausada y el token sigue por el canal protegido.
 
+El perfil X fija `apidojo/twitter-scraper-lite`, Actor `nfp1fpt5gUlBwPcor`, build `0.0.1056` e identificador `XaXWolZVfFZprLlVD`. Preflight consulta esa build directamente y exige que coincidan identificador, Actor, número y estado `SUCCEEDED`; no depende de que aparezca en el historial paginado ni sustituye la versión por `latest`. Los demás perfiles consultan su número fijo en el historial acotado. Una build ausente, inaccesible o con identidad distinta impide desplegar. Véase [consulta de una build de Apify](https://docs.apify.com/api/v2/actor-build-get).
+
 ## Identidad y secretos
 
 El operador firma las solicitudes. `admin_user_ocid` identifica al propietario autorizado, sin crear otro provisioner ni cambiar la identidad firmante. Se revalida antes de habilitar memoria y durante instalación/mantenimiento. Una revocación detiene el avance.

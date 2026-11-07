@@ -17,7 +17,7 @@ MESSAGES = {
 
 def _read(client, path, token, params=None):
     # Only these documented read surfaces may receive the bearer credential.
-    if not re.fullmatch(r'/users/me|/actors/[A-Za-z0-9]+(?:/builds)?', path):
+    if not re.fullmatch(r'/users/me|/actors/[A-Za-z0-9]+(?:/builds)?|/actor-builds/[A-Za-z0-9]+', path):
         raise ValueError('Unsupported preflight read surface')
     try:
         response = client.get('https://api.apify.com/v2' + path,
@@ -69,6 +69,16 @@ def check_apify(token: SecretStr, *, client=None, profiles=None, max_build_pages
             row.update(status='identity_mismatch', message='Actor identity differs from the pinned registry.')
             continue
         row['actor_visibility'] = 'verified'
+        if 'build_id' in profile:
+            build, error = _read(client, '/actor-builds/' + profile['build_id'], token)
+            if error:
+                row.update(error)
+            elif (build.get('id'), build.get('actId'), build.get('buildNumber')) != (
+                    profile['build_id'], profile['actor_id'], profile['build']):
+                row.update(status='identity_mismatch', message='Build identity differs from the pinned registry.')
+            else:
+                row.update(status='visible' if build.get('status') == 'SUCCEEDED' else 'build_unavailable')
+            continue
         for page in range(max_build_pages):
             builds, error = _read(client, '/actors/' + profile['actor_id'] + '/builds', token,
                                   {'limit': 1000, 'offset': page * 1000, 'desc': 'true'})
