@@ -4,6 +4,8 @@ El manifiesto `terraform/deploy-studio.json` define el proyecto `aidp-ai-market-
 
 ## Preparación
 
+`AIDP administrator` muestra Select hasta que el operador elige una identidad del inventario. El formulario no asigna un administrador por defecto; el instalador conserva sus verificaciones de permisos.
+
 El operador necesita permisos para consultar identidad, región, modelo y recursos existentes, y para crear los recursos seleccionados como nuevos. El administrador elegido debe estar activo en el Identity Domain indicado. Una plataforma existente exige roles AIDP efectivos; en una plataforma nueva el instalador asigna y vuelve a comprobar el rol autorizado antes de publicar el agente.
 
 El runner requiere las dependencias de `uv.lock`. La compatibilidad del AI Compute y sus paquetes se verifica por separado; instalar dependencias de hooks no certifica el entorno del agente.
@@ -48,8 +50,8 @@ El formulario realiza instalación/Resume con `install` como valor predeterminad
 | `new_aidp_name` | New AIDP name, inicialmente `aidp_market_intelligence`, solo al crear; llega al recurso AIDP de Terraform. |
 | `existing_ai_data_platform_ocid`, `existing_workspace_key` | Referencias exactas requeridas en modo existing. |
 | Identidad: `identity_domain_id`, `admin_user_ocid` | Dominio y propietario elegibles, revalidados server-side. |
-| Artefactos: `artifacts_bucket_mode` | Create new bucket o Use existing bucket; inicialmente existing, igual que Governance. |
-| `artifacts_bucket_name` | Nombre exacto para crear un bucket nuevo. |
+| Artefactos: `artifacts_bucket_mode` | Create new bucket o Use existing bucket; inicialmente Create new bucket, igual que Governance. |
+| `artifacts_bucket_name` | Nombre exacto para crear un bucket nuevo; valor inicial `oci_artifacts`. |
 | `existing_artifacts_bucket_name` | Selector `oci_active_buckets` para reutilizar un bucket; preflight resuelve su nombre canónico para Terraform y los hooks. |
 | Enterprise AI: `agent_model_id` | Modelo OCI ACTIVE guardado en el runtime pausado; misma preferencia `xai.grok-4.7` que Governance. CTN resuelve esa preferencia al OCID disponible antes de enviar la selección. |
 | `apify_token` | Secreto para install/update/redeploy; rollback no lo utiliza. |

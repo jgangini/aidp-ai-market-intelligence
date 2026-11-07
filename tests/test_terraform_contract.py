@@ -60,7 +60,9 @@ def test_visible_form_matches_governance_layout_except_apify():
     assert fields['admin_user_ocid']['label'] == 'AIDP administrator'
     assert fields['new_aidp_name']['default'] == 'aidp_market_intelligence'
     assert fields['new_aidp_name']['visible_when'] == {'field': 'aidp_mode', 'equals': 'new'}
-    assert fields['artifacts_bucket_mode']['default'] == 'existing'
+    assert fields['artifacts_bucket_mode']['default'] == 'new'
+    assert fields['artifacts_bucket_name']['default'] == 'oci_artifacts'
+    assert 'default' not in fields['admin_user_ocid'] and 'default_selection' not in fields['admin_user_ocid']
     assert fields['agent_model_id']['default'] == 'xai.grok-4.7'
     assert fields['autonomous_database_version']['options'] == [
         {'value': '26ai:DW', 'label': 'Oracle AI Database 26ai · AI Lakehouse (DW)'}]
