@@ -228,10 +228,10 @@ def test_postapply_binds_exact_owned_bucket_before_install(monkeypatch, foreign_
     monkeypatch.setattr(hooks, 'MarketAidpClient', Client)
     platform = Mock()
     monkeypatch.setattr(hooks, '_platform', platform)
-    navigation = Mock(return_value='https://testord.datalake.oci.oraclecloud.com#?tenant=test&domain=Default')
+    navigation = Mock(return_value='https://testordagenthub.datalake.oci.oraclecloud.com/static/ah/#?tenant=test&domain=Default')
     if unavailable_navigation:
         navigation.side_effect = AidpProvisionConflict('Navigation metadata unavailable')
-    monkeypatch.setattr(hooks, 'workbench_url', navigation)
+    monkeypatch.setattr(hooks, 'agent_hub_url', navigation)
     monkeypatch.setattr(hooks, 'check_apify', lambda token: {'reads_verified': True})
     install = Mock(return_value={'status': 'active', 'phase': 'ready', 'operation_id': hooks.operation_id(DEPLOYMENT)})
     monkeypatch.setattr(hooks, 'install', install)
@@ -256,7 +256,7 @@ def test_postapply_binds_exact_owned_bucket_before_install(monkeypatch, foreign_
             assert result['outputs']['application_url'] == ''
             assert result['events'][-1]['level'] == 'warning'
         else:
-            assert result['outputs']['application_url'].startswith('https://testord.datalake.oci.oraclecloud.com')
+            assert result['outputs']['application_url'] == 'https://testordagenthub.datalake.oci.oraclecloud.com/static/ah/#?tenant=test&domain=Default'
         assert result['outputs']['deployment_surface'] == 'TEST'
         assert result['outputs']['maintenance_action'] == 'install'
         assert result['outputs']['operation_id'] == hooks.operation_id(DEPLOYMENT)

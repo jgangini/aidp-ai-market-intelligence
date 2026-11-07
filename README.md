@@ -29,7 +29,7 @@ Selecciona **AIDP AI Market Intelligence** y una release en Deploy Studio. Elige
 
 Para una plataforma compartida con Governance, conserva su AIDP, workspace, bucket y la base de memoria ya asociada. La [guía de despliegue](docs/deployment.md) explica los parámetros, secretos y comprobaciones de ambos modos.
 
-Al terminar, **Application URL** abre el Workbench de la plataforma verificada con el dominio de inicio de sesión seleccionado. Allí se abre el agente del workspace y su Playground de TEST. El endpoint de API del candidato no es una interfaz web de chat; la publicación y el registro en Agent Hub son operaciones separadas de esta instalación TEST.
+Al terminar, **Application URL** abre Agent Hub en el host de la plataforma verificada, con la ruta `/static/ah/` y el tenant y dominio de inicio de sesión codificados. El enlace usa el prefijo de Workbench devuelto por OCI y su sufijo `agenthub`; el SDK publica `web_socket_endpoint` y `alias_key`, sin un campo específico para Agent Hub. Abrir esta interfaz no publica el candidato TEST: para que el agente esté disponible allí necesita su publicación y registro correspondientes, operaciones separadas de esta instalación. El endpoint de API del candidato tampoco es una interfaz web de chat.
 
 ## Desarrollo local
 
@@ -48,4 +48,4 @@ uv run aidp-market package-check
 - [Operación: estado, Resume, actualización y recuperación](docs/operations.md)
 - [Distribución y verificación de releases](docs/release-handoff.md)
 
-El [repositorio es público](https://github.com/jgangini/aidp-ai_market-intelligence). Credenciales, Terraform state y recibos de operaciones permanecen fuera de Git. La publicación PROD, delete y transferencia de state no están implementadas. La asociación real de memoria, continuidad de checkpoints, permisos y entorno nativo requieren aceptación OCI; las pruebas con mocks no la sustituyen.
+El [repositorio es público](https://github.com/jgangini/aidp-ai-market-intelligence). Credenciales, Terraform state y recibos de operaciones permanecen fuera de Git. La publicación PROD, delete y transferencia de state no están implementadas. La asociación real de memoria, continuidad de checkpoints, permisos y entorno nativo requieren aceptación OCI; las pruebas con mocks no la sustituyen.
