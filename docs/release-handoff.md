@@ -1,6 +1,6 @@
 # Distribución y verificación
 
-El [repositorio público](https://github.com/jgangini/aidp-ai-market-intelligence) distribuye candidatas inmutables para Deploy Studio. El paquete Python utiliza `0.1.0` y el paquete AIDP `2.0.1`. Cada release identifica su tag, commit exacto, CI y alcance de validación en su manifiesto. Consulta las [releases publicadas](https://github.com/jgangini/aidp-ai-market-intelligence/releases) para seleccionar una candidata.
+El [repositorio público](https://github.com/jgangini/aidp-ai-market-intelligence) distribuye candidatas inmutables para Deploy Studio. El paquete Python utiliza `0.1.0` y el paquete AIDP `2.0.2`. Cada release identifica su tag, commit exacto, CI y alcance de validación en su manifiesto. Consulta las [releases publicadas](https://github.com/jgangini/aidp-ai-market-intelligence/releases) para seleccionar una candidata.
 
 ## Archivos publicados
 
