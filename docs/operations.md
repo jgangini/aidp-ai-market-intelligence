@@ -82,3 +82,7 @@ Para validación local utiliza `scripts/arch-postflight.ps1`: pruebas Python, pa
 La infraestructura funciona con el contrato Terraform 1.5.7 de Resource Manager. El postflight local usa Terraform moderno para las pruebas con mocks; CI comprueba init/formato/validate también con 1.5.7. Mantén ambas comprobaciones al modificar precondiciones o funciones Terraform.
 
 No están implementados activar investigación por un comando público, publicación PROD, delete ni transferencia de state. La aceptación nativa, continuidad/aislamiento de memoria y calidad de investigación siguen siendo comprobaciones separadas.
+
+## Etiquetas de recursos en Deploy Studio
+
+El output no sensible `deploy_studio_resource_labels` relaciona cada dirección exacta de instancia Terraform con una etiqueta breve en inglés. Se resuelve durante PLAN, incluye las instancias seleccionadas de recursos y consultas de datos y omite las que tienen `count = 0`. Las claves de `for_each` conservan su representación JSON entre corchetes. Las etiquetas no contienen OCID, credenciales ni atributos calculados. CloudTechNext puede mostrar estos nombres y conservar la dirección en los detalles técnicos; el inventario, las acciones, el progreso y las dependencias proceden del PLAN y los logs de OCI Resource Manager, no de este mapa ni del orden de los archivos `.tf`.

@@ -29,6 +29,27 @@ variables {
 run "new_resources_are_owned" {
   command = plan
   assert {
+    condition     = output.deploy_studio_resource_labels["oci_database_autonomous_database.memory[0]"] == "Agent memory database" && output.deploy_studio_resource_labels["oci_objectstorage_bucket.artifacts[0]"] == "Artifacts bucket"
+    error_message = "Plan resource labels must identify the selected infrastructure without exposing instance suffixes."
+  }
+
+  assert {
+    condition = (
+      !issensitive(output.deploy_studio_resource_labels) &&
+      toset(keys(output.deploy_studio_resource_labels)) == toset([
+        "terraform_data.memory_inputs",
+        "oci_ai_data_platform_ai_data_platform.market[0]",
+        "oci_identity_policy.aidp_service[0]",
+        "time_sleep.aidp_iam_propagation[0]",
+        "oci_objectstorage_bucket.artifacts[0]",
+        "oci_database_autonomous_database.memory[0]",
+      ]) &&
+      alltrue([for label in values(output.deploy_studio_resource_labels) : length(label) > 0 && length(label) <= 80])
+    )
+    error_message = "Display labels must be available during PLAN, nonsensitive, and cover exactly the selected resource and data instances."
+  }
+
+  assert {
     condition     = length(oci_database_autonomous_database.memory) == 1 && output.owned_autonomous_database && oci_database_autonomous_database.memory[0].db_version == "26ai" && oci_database_autonomous_database.memory[0].db_workload == "DW" && !oci_ai_data_platform_ai_data_platform.market[0].is_enable_ai_feature
     error_message = "Create memory storage explicitly; enable AI only through the protected post-apply hook."
   }
@@ -133,6 +154,18 @@ run "different_administrator_changes_ownership_binding" {
 
 run "external_resources_are_not_managed" {
   command = plan
+  assert {
+    condition = (
+      !issensitive(output.deploy_studio_resource_labels) &&
+      toset(keys(output.deploy_studio_resource_labels)) == toset([
+        "terraform_data.memory_inputs",
+        "data.oci_database_autonomous_database.memory[0]",
+      ]) &&
+      alltrue([for label in values(output.deploy_studio_resource_labels) : length(label) > 0 && length(label) <= 80])
+    )
+    error_message = "Display labels must be available during PLAN, nonsensitive, and cover exactly the selected resource and data instances."
+  }
+
   variables {
     aidp_mode                         = "existing"
     existing_ai_data_platform_ocid    = "ocid1.aidataplatform.oc1..external"
