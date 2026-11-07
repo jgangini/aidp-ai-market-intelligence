@@ -35,4 +35,3 @@ La instalación deja un candidato TEST y AI Compute preparados, con investigaci�
 Las pruebas locales verifican contratos, errores, empaquetado y Terraform con mocks. La aceptación nativa comprueba por separado PLAN/APPLY, recursos, memoria READY, AI Compute y despliegue TEST ACTIVE. Estas comprobaciones no acreditan inferencia, continuidad de checkpoints, calidad de respuestas ni ejecución de actores pagados. Cada release debe declarar cuáles se realizaron sobre su commit exacto.
 
 Consulta [despliegue](deployment.md) para instalar y [operación](operations.md) para Resume y recuperación. Los registros concretos en `docs/evidence/` describen esa ejecución y no sustituyen el funcionamiento actual del producto.
-
