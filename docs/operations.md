@@ -34,13 +34,21 @@ Antes de habilitar AI, el hook revalida al administrador y reserva una intenció
 | Situación | Respuesta operativa |
 | --- | --- |
 | READY y `vectorDbId` coincide | Reutilizar la asociación, sin otro POST ni contraseña ADMIN. |
-| ENABLING con la base esperada | Esperar y reanudar el mismo despliegue. |
-| Asociación ausente, otra base, estado desconocido/FAILED | Conservar recursos y revisar la configuración nativa; no sustituir la memoria. |
+| ENABLING con la base esperada o sin asociación visible | El hook espera sin repetir POST. Continúa con READY y coincidencia nativa de la base, o con la procedencia verificable de la solicitud que acaba de enviar. |
+| READY sin asociación visible tras el POST de esta invocación | Exige el identificador de work request devuelto por ese POST, operación ENABLE_AI_FEATURES real, plataforma exacta y SUCCEEDED. Conserva el binding de base de la solicitud y sella el ETag nativo mediante CAS. No lo presenta como readback del OCID. |
+| Resume con recibo ready y asociación no visible | Exige recibo de la misma operación/binding, WR satisfactoria y ETag de plataforma sin cambios. Un recibo accepted sin sellar requiere conciliación nativa; no puede acreditar una revisión posterior. |
+| READY sin procedencia verificable, otra base, estado desconocido/FAILED | La instalación se bloquea. Conservar recursos y revisar la configuración nativa; no sustituir la memoria ni deducir el destino de una intención local o de una WR encontrada por fecha. |
 | HTTP 400/401/403/404/412 confirmado | La intención queda rejected mediante CAS. Corregir parámetros/ADMIN/permisos y reanudar la misma operación; se reserva otro intento con ETag y retry token nuevos. |
 | Timeout o 409 sin readback READY exacto | Conservar submitted. Reconciliar la solicitud control-plane y su work request; no repetir ni borrar el marcador como atajo. |
 | Intención ajena, inválida o modificada | Detenerse para reconciliación; no adoptar ni sobrescribirla. |
 
 El mantenimiento no habilita AI ni cambia de base. Rollback del agente conserva el servicio de memoria y los checkpoints. No se deshabilitan AI, retención o compartición de sesiones como parte de una recuperación.
+
+La espera dispone de 15 minutos y consulta cada 5 segundos con reloj monotónico. No inicia otra consulta al agotar el plazo; una solicitud ya en curso puede prolongarlo hasta sus timeouts de conexión/lectura de 5/20 segundos. Estas lecturas desactivan los reintentos automáticos del SDK. El preflight mantiene el bloqueo de una plataforma existente cuya asociación aún no puede verificarse, especialmente si se intenta crear otra base.
+
+Los resultados pendientes y las asociaciones no verificables tienen mensajes públicos constantes, sin cuerpos de excepciones ni secretos. Ambos devuelven error y outputs vacíos; no se publica `memory_status=READY` ni se instala el agente. El GET público de AIDP no garantiza `vectorDbId`; una intención `submitted` sola nunca sustituye la respuesta aceptada del servicio. La reutilización del recibo requiere que su work request siga consultable; una operación antigua o un cambio de revisión exige conciliación.
+
+La base nueva pertenece al stack y admite su eliminación explícita. Una base existente solo es un data source y no se elimina. El AIDP nuevo depende de la base administrada para que Terraform elimine primero la plataforma. Esto no vacía el bucket de artefactos: la limpieza de sus objetos/versiones y la detención del instalador requieren coordinación previa al DESTROY.
 
 ## Locks y concurrencia
 

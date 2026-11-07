@@ -50,7 +50,7 @@ resource "oci_ai_data_platform_ai_data_platform" "market" {
   timeouts {
     create = "120m"
   }
-  depends_on = [time_sleep.aidp_iam_propagation]
+  depends_on = [time_sleep.aidp_iam_propagation, oci_database_autonomous_database.memory]
 }
 
 resource "oci_objectstorage_bucket" "artifacts" {

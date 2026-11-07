@@ -168,3 +168,27 @@ run "new_platform_rejects_stale_existing_selection" {
   }
   expect_failures = [output.ai_data_platform_ocid]
 }
+
+run "owned_resources_support_explicit_cleanup" {
+  command = apply
+  assert {
+    condition     = output.owned_autonomous_database && output.owned_ai_data_platform && output.owned_artifacts_bucket
+    error_message = "The managed test deployment must be removable by Terraform test teardown."
+  }
+}
+
+run "owned_resources_allow_removal_plan" {
+  command = plan
+  variables {
+    aidp_mode                         = "existing"
+    existing_ai_data_platform_ocid    = "ocid1.aidataplatform.oc1..external"
+    existing_workspace_key            = "external_workspace_key"
+    artifacts_bucket_mode             = "existing"
+    autonomous_database_mode          = "existing"
+    existing_autonomous_database_ocid = "ocid1.autonomousdatabase.oc1..memory"
+  }
+  assert {
+    condition     = length(oci_database_autonomous_database.memory) == 0 && length(oci_ai_data_platform_ai_data_platform.market) == 0 && length(oci_objectstorage_bucket.artifacts) == 0
+    error_message = "An explicit removal plan must not be blocked by protection on newly managed test resources."
+  }
+}
