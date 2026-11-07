@@ -1,13 +1,14 @@
 """Bind Agent Flow to Oracle-managed memory without replacing or clearing it."""
-import hashlib
 import json
 import re
+import time
 from uuid import NAMESPACE_URL, uuid5
 
 import oci
 from pydantic import SecretStr
 
-from .errors import AidpProvisionConflict, AidpProvisionPending
+from .errors import AidpMemoryAssociationConflict, AidpProvisionConflict, AidpProvisionPending
+from .memory_receipts import accepted_receipt, intent_key, read_receipt, verify_ready
 
 
 def _password(secrets, *, required):
@@ -22,9 +23,10 @@ def _password(secrets, *, required):
 
 
 def platform_details(config, signer, platform_id):
-    # The typed SDK 2.189 model discards vectorDbId. Preserve signed JSON from the
-    # same supported GET; an absent association must not become a guessed binding.
-    sdk = oci.ai_data_platform.AiDataPlatformClient(config, signer=signer, skip_deserialization=True)
+    # Preserve optional native association fields; the public GET model does not
+    # guarantee them. Missing fields require an accepted-request receipt instead.
+    sdk = oci.ai_data_platform.AiDataPlatformClient(config, signer=signer, skip_deserialization=True,
+        timeout=(5, 20), retry_strategy=oci.retry.NoneRetryStrategy())
     response = sdk.get_ai_data_platform(platform_id)
     value = response.data
     if (not isinstance(value, dict) or value.get('id') != platform_id
@@ -33,11 +35,14 @@ def platform_details(config, signer, platform_id):
     return value, next((v for k, v in response.headers.items() if k.lower() == 'etag'), None)
 
 
-def _association(platform, database_id):
+def _association(platform, database_id, *, waiting=False):
     status = platform.get('aiFeatureStatus')
     if status in ('READY', 'ENABLING'):
-        if not platform.get('vectorDbId') or platform['vectorDbId'] != database_id:
-            raise AidpProvisionConflict('AIDP memory association is missing or differs from the selected database; preserve it.')
+        association = platform.get('vectorDbId')
+        if waiting and database_id and not association:
+            return status
+        if not association or association != database_id:
+            raise AidpMemoryAssociationConflict('AIDP memory association is missing or differs from the selected database; preserve it.')
     elif status != 'DISABLED':
         raise AidpProvisionConflict('AIDP AI feature status is unavailable or failed; reconcile it before installation.')
     return status
@@ -145,13 +150,13 @@ def _enable_memory(client, config, secrets, intent, etag):
     """Reserve one durable request and record definite rejections for safe recovery."""
     platform_id, database_id = intent['platform_id'], intent['database_id']
     credential = _password(secrets, required=True)
-    key = 'control/ai_market_intelligence/memory/' + hashlib.sha256(platform_id.encode()).hexdigest() + '.json'
+    key = intent_key(platform_id)
     # Record intent before a call that may time out after being accepted. A lost
     # response is reconciled through READY + exact association, never another POST.
     intent_etag, attempt = _reserve_intent(client, key, intent)
     sdk = oci.ai_data_platform.AiDataPlatformClient(config, signer=client.signer)
     try:
-        sdk.enable_ai_feature(platform_id, oci.ai_data_platform.models.EnableAiFeatureDetails(
+        response = sdk.enable_ai_feature(platform_id, oci.ai_data_platform.models.EnableAiFeatureDetails(
             vector_db_id=database_id, vector_db_admin_cred=credential.get_secret_value()),
             if_match=etag, opc_retry_token=str(uuid5(NAMESPACE_URL, 'aidp-market-memory:' + intent['operation_id'] + ':' + database_id + ':' + str(attempt))),
             retry_strategy=oci.retry.NoneRetryStrategy())
@@ -165,25 +170,51 @@ def _enable_memory(client, config, secrets, intent, etag):
             raise
         if exc.status != 409:
             raise
+        return None
+    return accepted_receipt(client, intent, intent_etag, attempt, response)
+
+
+def _wait_for_memory(client, config, intent, platform, etag, receipt):
+    platform_id, database_id = intent['platform_id'], intent['database_id']
+    fresh_request = receipt is not None
+    sdk = oci.ai_data_platform.AiDataPlatformClient(config, signer=client.signer,
+        timeout=(5, 20), retry_strategy=oci.retry.NoneRetryStrategy())
+    deadline = time.monotonic() + 900
+    while True:
+        status = _association(platform, database_id, waiting=True)
+        if status == 'READY':
+            if platform.get('vectorDbId') == database_id:
+                return database_id
+            if receipt is None:
+                receipt = read_receipt(client, intent)
+            if receipt is None:
+                raise AidpMemoryAssociationConflict('The selected memory association has no accepted request receipt.')
+            if verify_ready(client, sdk, intent, receipt, etag, fresh_request=fresh_request):
+                return database_id
+        remaining = deadline - time.monotonic()
+        if status not in ('ENABLING', 'READY') or remaining <= 0:
+            raise AidpProvisionPending('AI memory enablement is still running or unverified; preserve the deployment.', 'memory')
+        time.sleep(min(5, remaining))
+        if time.monotonic() >= deadline:
+            raise AidpProvisionPending('AI memory enablement is still running; preserve the deployment.', 'memory')
+        platform, etag = platform_details(config, client.signer, platform_id)
 
 
 def ensure_memory(client, context, secrets, outputs, operation):
     config, database_id = _memory_destination(client, context, outputs)
     platform_id = client.settings.aidp_platform_id
     platform, etag = platform_details(config, client.signer, platform_id)
-    status = _association(platform, database_id)
-    if status == 'READY':
+    status = _association(platform, database_id, waiting=True)
+    intent = {'schema_version': 1, 'platform_id': platform_id, 'database_id': database_id,
+              'operation_id': operation, 'deployment_binding': outputs['deployment_binding']}
+    if status == 'READY' and platform.get('vectorDbId') == database_id:
         return database_id
-    if status == 'ENABLING':
-        raise AidpProvisionPending('AI memory enablement is still running; resume the same deployment.', 'memory')
+    if status in ('ENABLING', 'READY'):
+        return _wait_for_memory(client, config, intent, platform, etag, None)
     if context['inputs'].get('lifecycle_action', 'install') != 'install':
         raise AidpProvisionConflict('Maintenance cannot enable or change platform memory.')
     if not etag:
         raise AidpProvisionConflict('AIDP memory enablement requires the current platform ETag.')
-    intent = {'schema_version': 1, 'platform_id': platform_id, 'database_id': database_id,
-              'operation_id': operation, 'deployment_binding': outputs['deployment_binding']}
-    _enable_memory(client, config, secrets, intent, etag)
-    platform, _ = platform_details(config, client.signer, platform_id)
-    if _association(platform, database_id) != 'READY':
-        raise AidpProvisionPending('Memory enablement has not reached verified READY; preserve the deployment and resume.', 'memory')
-    return database_id
+    receipt = _enable_memory(client, config, secrets, intent, etag)
+    platform, etag = platform_details(config, client.signer, platform_id)
+    return _wait_for_memory(client, config, intent, platform, etag, receipt)

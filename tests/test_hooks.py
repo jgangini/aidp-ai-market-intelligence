@@ -7,7 +7,7 @@ from types import SimpleNamespace as NS
 from unittest.mock import Mock
 import pytest
 from ai_market_intelligence import hooks
-from ai_market_intelligence.errors import AidpProvisionConflict
+from ai_market_intelligence.errors import AidpMemoryAssociationConflict, AidpProvisionConflict, AidpProvisionPending
 
 OP = '00000000-0000-4000-8000-000000000001'
 DEPLOYMENT = 'dep_0123456789abcdef'
@@ -143,6 +143,32 @@ def test_runner_failure_never_serializes_secret_or_exception_body(tmp_path, monk
     assert hooks.run_hook('preflight') == 1
     assert marker not in paths['result'].read_text() + capsys.readouterr().out
     assert json.loads(paths['result'].read_text())['events'][0]['status'] == 'failed'
+
+
+@pytest.mark.parametrize('kind', ['preflight', 'post_apply'])
+@pytest.mark.parametrize('error,expected', [(AidpProvisionPending, 'still pending'),
+    (AidpMemoryAssociationConflict, 'memory database association could not be verified')])
+def test_runner_memory_diagnostics_are_constant_and_fail_closed(tmp_path, monkeypatch, capsys, kind, error, expected):
+    marker = 'private-memory-exception-body'
+    context_path, secrets_path, result_path = (tmp_path / name for name in ('context.json', 'secrets.json', 'result.json'))
+    context_path.write_text(json.dumps(context()))
+    secrets_path.write_text(json.dumps({'inputs': {'apify_token': marker}}))
+    for name, path in [('DEPLOY_STUDIO_CONTEXT', context_path), ('DEPLOY_STUDIO_SECRETS', secrets_path),
+                       ('DEPLOY_STUDIO_RESULT' if kind == 'preflight' else 'DEPLOY_STUDIO_OUTPUT', result_path)]:
+        monkeypatch.setenv(name, str(path))
+    monkeypatch.setenv('DEPLOY_STUDIO_OCI_CONFIG', 'not-a-real-config')
+    def failure(*args):
+        raise error(marker)
+    monkeypatch.setattr(hooks, kind, failure)
+    assert hooks.run_hook(kind) == 1
+    text = result_path.read_text()
+    captured = capsys.readouterr()
+    assert marker not in text + captured.out + captured.err
+    result = json.loads(text)
+    assert result['inputs' if kind == 'preflight' else 'outputs'] == {}
+    assert expected in result['events'][0]['message']
+    assert len(result['events']) == 1
+    assert result['events'][0].get('status', result['events'][0].get('level')) in ('failed', 'error')
 
 
 def test_transient_real_preflight_id_is_not_used_as_operation_identity(native):

@@ -23,3 +23,6 @@ class AidpRequestError(AidpProvisionError):
 
 class AidpProvisionConflict(Exception):
     pass
+
+class AidpMemoryAssociationConflict(AidpProvisionConflict):
+    """Native memory does not prove the exact selected database association."""

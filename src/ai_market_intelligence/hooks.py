@@ -12,7 +12,7 @@ from pydantic import SecretStr
 from .apify_preflight import check_apify
 from .authorization import resolve_domain, verify_administrator
 from .client import MarketAidpClient
-from .errors import AidpProvisionConflict
+from .errors import AidpMemoryAssociationConflict, AidpProvisionConflict, AidpProvisionPending
 from .lifecycle import install
 from .settings import Settings
 from .memory import preflight_memory, ensure_memory
@@ -261,6 +261,14 @@ def run_hook(kind):
         result = action(context, secrets, os.environ['DEPLOY_STUDIO_OCI_CONFIG'])
         destination.write_text(json.dumps(result), encoding='utf-8')
         return 1 if any(event.get('level') == 'error' for event in result.get('events', [])) else 0
+    except (AidpProvisionPending, AidpMemoryAssociationConflict) as exc:
+        message = ('AIDP provisioning is still pending. Preserve this deployment and resume the same operation.'
+                   if isinstance(exc, AidpProvisionPending) else
+                   'The selected AIDP memory database association could not be verified. Preserve this deployment; no replacement was sent.')
+        event = ({'name': 'Market preflight', 'status': 'failed', 'message': message} if kind == 'preflight'
+                 else {'level': 'error', 'message': message})
+        destination.write_text(json.dumps({'inputs' if kind == 'preflight' else 'outputs': {}, 'events': [event]}), encoding='utf-8')
+        return 1
     except Exception:
         # SDK and validation errors can contain request/credential bodies. Fail closed without echo.
         if kind == 'preflight':

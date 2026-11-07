@@ -38,9 +38,6 @@ resource "oci_database_autonomous_database" "memory" {
     workload           = "ai-market-intelligence-memory"
     deployment_binding = local.deployment_binding
   }
-  lifecycle {
-    prevent_destroy = true
-  }
   depends_on = [terraform_data.memory_inputs]
 }
 
