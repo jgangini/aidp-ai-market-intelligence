@@ -12,4 +12,3 @@ output "deploy_studio_resource_labels" {
     { for index, instance in data.oci_database_autonomous_database.memory : "data.oci_database_autonomous_database.memory[${index}]" => "Existing agent memory database" }
   )
 }
-
