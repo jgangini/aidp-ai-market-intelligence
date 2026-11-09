@@ -2,6 +2,7 @@
 import asyncio
 import copy
 import importlib
+import json
 import sys
 
 import pytest
@@ -109,6 +110,7 @@ class MarketFixtureModel:
         self.calls.append(name)
         if name=='market_understand':
             return {'entity':'Fixture brand','market':'Colombia','objective':'Describir reclamaciones',
+                    'period_is_explicit':True,
                     'start':'2026-10-26T00:00:00+00:00','end':'2026-11-02T23:59:59+00:00',
                     'sources':list(self.sources),'clarification':self.clarification,'assumptions':[]}
         if name=='market_plan':
@@ -171,6 +173,73 @@ def test_planning_analysis_draft_review_and_final_preserve_question_and_admitted
     assert all(question==store.read()[0]['question'] for _,question,_ in contexts)
     assert all(brief==store.read()[0]['brief'] for _,_,brief in contexts)
     assert contexts[0][2]['start']=='2026-10-26T00:00:00+00:00'
+
+
+@pytest.mark.parametrize('mode,label',[
+    ('conversation','Periodo de publicaciones consultado'),
+    ('documentary','Ventana operativa de búsqueda'),
+    ('financial','Ventana operativa de búsqueda'),
+])
+def test_final_scope_is_state_owned_even_when_synthesis_omits_dates(mode,label):
+    sources=('x','instagram') if mode=='conversation' else ('web',)
+    store,model,collector,graph=market_fixture(sources)
+    original=model.ask
+    async def ask(name,schema,payload):
+        result=await original(name,schema,payload)
+        if name=='market_understand':
+            result['retrieval_mode']=mode
+        return result
+    model.ask=ask
+    events,state=market_run(graph)
+    text=state['response']['markdown']
+    assert text.startswith('La muestra contiene reclamaciones atribuidas.')
+    assert text.count(label)==1
+    brief=store.read()[0]['brief']
+    assert f"{label}: {brief['start']} a {brief['end']}." in text
+    assert all(call['brief']['start']==brief['start'] and call['brief']['end']==brief['end']
+               for call in collector.calls)
+    if mode=='conversation':
+        assert '2026-10-26T00:00:00+00:00 a 2026-11-02T23:59:59+00:00' in text
+    source_names='Instagram, X' if mode=='conversation' else 'web'
+    assert f'Fuentes con evidencia: {source_names}.' in text
+    assert f'Evidencias recuperadas: {len(sources)}.' in text
+    assert ('Periodo de publicaciones consultado' in text)==(mode=='conversation')
+    assert all(event['text']==text for event in events
+               if event['type'] in {'draft.compacted','run.completed'})
+    from ai_market_intelligence.runtime.wire import market_replay_packet
+    assert json.loads(market_replay_packet(store,'current-request',0))['response']['markdown']==text
+    assert len(collector.calls)==len(sources) and model.calls.count('market_consolidate')==1
+
+
+def test_final_scope_retains_actual_retrieval_when_all_claims_are_rejected():
+    store,model,collector,graph=market_fixture(('x',))
+    model.reject=True
+    events,state=market_run(graph)
+    response=state['response']
+    assert response['status']=='partial' and response['references']==[]
+    assert 'Fuentes con evidencia: X.' in response['markdown']
+    assert 'Evidencias recuperadas: 1.' in response['markdown']
+    assert 'No fue posible publicar hallazgos verificados' in response['markdown']
+    assert events[-1]['text']==response['markdown']
+
+
+def test_final_scope_respects_delivery_bound_without_cutting_verified_blocks():
+    store,model,collector,graph=market_fixture(('web',))
+    original=model.ask
+    async def ask(name,schema,payload):
+        result=await original(name,schema,payload)
+        if name=='market_consolidate':
+            result['text']='x'*19999
+        return result
+    model.ask=ask
+    events,state=market_run(graph)
+    response=state['response']
+    assert len(response['markdown'])<=20000
+    assert 'Periodo de publicaciones consultado:' in response['markdown']
+    assert response['blocks'][0]['text']=='La muestra contiene reclamaciones atribuidas.'
+    assert len(response['references'])==1
+    assert 'bloques verificados adjuntos' in response['markdown']
+    assert events[-1]['text']==response['markdown']
 
 
 def test_financial_document_is_collected_before_auxiliary_web_in_financial_mode():
@@ -350,7 +419,9 @@ def test_market_unknown_citation_fails_before_publication():
     events,state=market_run(graph)
     assert state['response']['status']=='failed'
     assert state['response']['failure']=={'stage':'draft','error_type':'ValueError'}
-    assert [event['type'] for event in events]==['run.failed']
+    assert [event['type'] for event in events]==['source.coverage','source.coverage','run.failed']
+    assert [event['coverage']['phase'] for event in events[:-1]]==['retrieving','retrieved']
+    assert all(event['evidence_ids']==[] for event in events[:-1])
     assert store.snapshot.value['evidence'] and store.snapshot.value['response'] is None
 
 
@@ -367,7 +438,9 @@ def test_market_analysis_schema_constrains_citations_and_rejects_the_observed_se
     model.ask=invalid_analysis
     events,state=market_run(graph)
     assert state['response']['failure']=={'stage':'analyze','error_type':'ValueError'}
-    assert [event['type'] for event in events]==['run.failed']
+    assert [event['type'] for event in events]==['source.coverage','source.coverage','run.failed']
+    assert [event['coverage']['phase'] for event in events[:-1]]==['retrieving','retrieved']
+    assert all(event['evidence_ids']==[] for event in events[:-1])
     assert 'market_draft' not in model.calls and len(collector.calls)==1
 
 

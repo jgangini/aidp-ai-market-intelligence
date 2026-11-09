@@ -120,8 +120,9 @@ def prepare_pilot(root, definition_path, *, cycle=0):
     if not binding['research_enabled'] or binding['services']['candidate_revision'] != value['candidate_revision']:
         raise ValueError('The pilot service binding differs from its declared candidate')
     from ai_market_intelligence.installation.agent_package import agent_package
-    source, _ = agent_package(binding)
-    value['source_sha256'] = hashlib.sha256(source).hexdigest()
+    from ai_market_intelligence.runtime.package_identity import source_identity
+    source, assets = agent_package(binding)
+    value['source_sha256'] = source_identity({'market_intelligence.py': source, **assets})
     value['runtime_config_sha256'] = hashlib.sha256(market_project_path(root, value['runtime_config']).read_bytes()).hexdigest()
     target = directory / 'definition.json'
     if target.exists():
@@ -325,6 +326,7 @@ def validate_previous_pass(root,definition,cycle):
 
 def run_pilot(lifecycle, root, *, apply,cycle=0,resume_case=None):
     from ai_market_intelligence.package import load_package
+    from ai_market_intelligence.runtime.package_identity import directory_identity
     directory = pilot_directory(root,cycle)
     definition = json.loads((directory / 'definition.json').read_text(encoding='utf-8'))
     if resume_case is not None and resume_case not in {case['id'] for case in definition['cases']}:
@@ -338,7 +340,7 @@ def run_pilot(lifecycle, root, *, apply,cycle=0,resume_case=None):
             raise ValueError('The admitted corpus or oracle bytes changed before execution')
     if (hashlib.sha256(config_path.read_bytes()).hexdigest() != definition['runtime_config_sha256']
             or definition['candidate_revision'] != load_package('ai_market_intelligence', require_available=False).pack_sha256
-            or hashlib.sha256(market_project_path(root, lifecycle.config['agent']['entry']).read_bytes()).hexdigest() != definition['source_sha256']):
+            or directory_identity(market_project_path(root, lifecycle.config['agent']['entry']).parent) != definition['source_sha256']):
         raise ValueError('The admitted pilot binding changed; preserve its previous observations')
     if not apply:
         return {'action': 'pilot-run', 'applied': False, 'cases': len(definition['cases'])}

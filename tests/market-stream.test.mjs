@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createMarketView, reduceMarketPacket, ReplayRequired } from '../scripts/market-stream-example.mjs';
+import { createMarketView, reduceMarketPacket, ReplayRequired, readMarketPackets } from '../scripts/market-stream-example.mjs';
 
 const envelope = values => ({ protocol: 'ai-market-intelligence', version: '2.0', ...values });
 const event = (sequence, values = {}) => ({ event_id: `event-${sequence}`, sequence, turn_id: 'request',
@@ -8,6 +8,60 @@ const event = (sequence, values = {}) => ({ event_id: `event-${sequence}`, seque
   source_key: 'facebook', source_keys: ['facebook'], evidence_ids: ['source'], text: 'Hallazgo atribuido.', ...values });
 const reference = { evidence_id: 'source', url: 'https://example.org/public', source: 'facebook' };
 const artifact = { artifact_id: 'plot', kind: 'line', evidence_ids: ['source'], rows: [] };
+
+test('source activity arrives incrementally before body completion and preserves UI tags', async () => {
+  let controller;
+  const body = new ReadableStream({ start(value) { controller = value; } });
+  const iterator = readMarketPackets(body);
+  const progress = event(1, { type: 'source.coverage', block_id: null, evidence_ids: [],
+    text: 'Información pendiente de verificar.', coverage: { source: 'facebook', phase: 'retrieving' } });
+  const first = new TextEncoder().encode(JSON.stringify(envelope({ kind: 'event', event: progress })) + '\n');
+  for (const byte of first) controller.enqueue(Uint8Array.of(byte));
+  const packet = await iterator.next();
+  assert.equal(packet.done, false);
+  let view = reduceMarketPacket(createMarketView('request'), packet.value);
+  assert.equal(view.activity.get('facebook').role_key, 'market_analysis');
+  assert.equal(view.activity.get('facebook').text, progress.text);
+  assert.equal(view.blocks.size, 0);
+  assert.equal(view.final, null);
+  controller.enqueue(new TextEncoder().encode(JSON.stringify(envelope({ kind: 'response', request_id: 'request',
+    response: { status: 'complete', markdown: 'Resumen verificado.', references: [], artifacts: [] } })) + '\n'));
+  controller.close();
+  view = reduceMarketPacket(view, (await iterator.next()).value);
+  assert.equal(view.final.markdown, 'Resumen verificado.');
+  assert.equal((await iterator.next()).done, true);
+  assert.equal(body.locked, false);
+});
+
+test('source activity survives compacted replay and rejects foreign or inconsistent tags', () => {
+  const progress = event(3, { type: 'source.coverage', block_id: null, evidence_ids: [],
+    coverage: { source: 'facebook', phase: 'retrieved' } });
+  const packet = envelope({ kind: 'snapshot', request_id: 'request', replay: { cursor: 3, events: [],
+    snapshot: { blocks: {}, artifacts: {}, activity: { facebook: progress } } } });
+  const view = reduceMarketPacket(createMarketView('request'), packet);
+  assert.equal(view.activity.get('facebook').coverage.phase, 'retrieved');
+  assert.equal(view.blocks.size, 0);
+  const foreign = structuredClone(packet);
+  foreign.replay.snapshot.activity.facebook.turn_id = 'other';
+  assert.throws(() => reduceMarketPacket(createMarketView('request'), foreign), /replay activity/);
+  const malformed = envelope({ kind: 'event', event: { ...progress, sequence: 1, source_keys: ['instagram'] } });
+  assert.throws(() => reduceMarketPacket(createMarketView('request'), malformed), /activity attribution/);
+});
+
+test('public stream rejects truncation and cancels its reader on early exit', async () => {
+  const truncated = new ReadableStream({ start(controller) {
+    controller.enqueue(new TextEncoder().encode('{"protocol":"ai-market-intelligence"}'));
+    controller.close();
+  } });
+  await assert.rejects(async () => { for await (const _packet of readMarketPackets(truncated)) {} }, /inside a public packet/);
+  let cancelled = false;
+  const body = new ReadableStream({ start(controller) {
+    controller.enqueue(new TextEncoder().encode(JSON.stringify(envelope({ kind: 'heartbeat', request_id: 'request' })) + '\n'));
+  }, cancel() { cancelled = true; } });
+  for await (const _packet of readMarketPackets(body)) break;
+  assert.equal(cancelled, true);
+  assert.equal(body.locked, false);
+});
 
 test('signed media links survive drafts and final responses; unsafe assets fail without mutating state', () => {
   const asset = { kind: 'video', delivery: 'direct', role: 'attachment',

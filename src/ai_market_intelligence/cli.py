@@ -2,6 +2,7 @@
 import argparse
 import asyncio
 import json
+import time
 from pathlib import Path
 from uuid import UUID
 from pydantic import SecretStr
@@ -19,7 +20,7 @@ def package_check():
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['package-check', 'status', 'install', 'update', 'redeploy', 'rollback', 'release-lock'])
+    parser.add_argument('command', choices=['package-check', 'status', 'install', 'update', 'redeploy', 'rollback', 'activate-test', 'migrate', 'rebuild-development', 'release-lock'])
     parser.add_argument('--settings', type=Path)
     parser.add_argument('--operation-id')
     parser.add_argument('--token-file', type=Path, help='Private file containing the Apify token; never passed on the command line')
@@ -27,15 +28,26 @@ def main(argv=None):
     parser.add_argument('--expected-etag')
     parser.add_argument('--confirm-no-running-hook', action='store_true')
     parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--project', type=Path, default=Path.cwd())
+    parser.add_argument('--plugin-scripts', type=Path)
+    parser.add_argument('--preserve-prod', action='store_true', help='Pin the existing PROD snapshot while updating only TEST through the plugin')
+    parser.add_argument('--restore-migration', action='store_true')
+    parser.add_argument('--research-binding', type=Path, help='Complete nonsecret runtime binding for explicit TEST activation')
     args = parser.parse_args(argv)
+    if args.restore_migration and args.command != 'migrate':
+        parser.error('--restore-migration only applies to migrate')
+    if args.preserve_prod and (args.command not in {'update', 'redeploy', 'rollback'} or not args.plugin_scripts):
+        parser.error('--preserve-prod requires update/redeploy/rollback and the reviewed --plugin-scripts')
+    if bool(args.research_binding) != (args.command == 'activate-test'):
+        parser.error('--research-binding is required only for activate-test')
     if args.command == 'package-check':
         print(json.dumps(package_check()))
         return 0
     if not args.settings:
         parser.error('--settings is required')
-    if args.command != 'status' and not args.apply:
+    if args.command not in {'status', 'rebuild-development'} and not args.apply:
         parser.error('--apply is required for this mutation')
-    if args.command in ('install', 'update', 'redeploy', 'rollback'):
+    if args.command in ('install', 'update', 'redeploy', 'rollback', 'activate-test', 'migrate', 'rebuild-development'):
         try:
             if str(UUID(args.operation_id)) != args.operation_id:
                 raise ValueError('Noncanonical UUID')
@@ -55,6 +67,38 @@ def main(argv=None):
         verify_administrator(client)
         if args.command == 'status':
             result = asyncio.run(client.status())
+        elif args.command == 'activate-test':
+            from .maintenance import maintain
+            from .research_activation import read_research_binding
+            result = maintain(client, 'update', args.operation_id, test_session_id=args.test_session_id,
+                              runtime_config=read_research_binding(args.research_binding))
+        elif args.command == 'rebuild-development':
+            if not args.plugin_scripts or not (args.plugin_scripts / 'aidp_agent_flow/native_layout.py').is_file():
+                parser.error('--plugin-scripts must select the reviewed layout-aware AIDP plugin')
+            from .rebuild import prepare, advance
+            from .errors import AidpProvisionPending
+            for step in range(120 if args.apply else 1):
+                previous, current = prepare(args.project, client, args.operation_id, args.plugin_scripts)
+                try:
+                    result = advance(client, previous, current, args.operation_id, apply=args.apply)
+                    if not args.apply or result.get('status') == 'completed':
+                        break
+                except AidpProvisionPending as pending:
+                    if pending.phase not in {'rebuild', 'test'}:
+                        raise
+                    result = {'status': 'pending', 'phase': 'rebuild'}
+                time.sleep(2)
+        elif args.command == 'migrate':
+            if not args.plugin_scripts or not (args.plugin_scripts / 'aidp_agent_flow/native_lifecycle.py').is_file():
+                parser.error('--plugin-scripts must select the installed AIDP plugin')
+            from .migration import prepare, migrate, restore, saved_forward
+            if args.restore_migration:
+                native = saved_forward(args.project, client, args.operation_id, args.plugin_scripts)
+                previous = prepare(args.project, client, args.operation_id, args.plugin_scripts, restoring=True)
+                result = restore(client, previous, native, args.operation_id, max_steps=120)
+            else:
+                native = prepare(args.project, client, args.operation_id, args.plugin_scripts)
+                result = migrate(client, native, args.operation_id, apply=True, max_steps=120)
         elif args.command == 'release-lock':
             if not args.expected_etag or not args.confirm_no_running_hook:
                 parser.error('Lock recovery requires --expected-etag and --confirm-no-running-hook')
@@ -75,9 +119,17 @@ def main(argv=None):
                 result = install(client, args.operation_id, token=token, test_session_id=args.test_session_id)
             else:
                 from .maintenance import maintain
-                result = maintain(client, args.command, args.operation_id, test_session_id=args.test_session_id)
+                native_factory = None
+                if args.plugin_scripts:
+                    from .installation.plugin_test import PluginTestDeployment
+                    native_factory = lambda settings: PluginTestDeployment(settings, project=args.project,
+                        plugin_scripts=args.plugin_scripts, operation_id=args.operation_id)
+                result = maintain(client, args.command, args.operation_id, test_session_id=args.test_session_id,
+                                  preserve_production=args.preserve_prod, native_factory=native_factory)
         print(json.dumps(result))
-        if args.command in ('update', 'redeploy') and result.get('status') == 'rolled_back':
+        if args.command == 'rebuild-development' and args.apply and result.get('status') != 'completed':
+            return 2
+        if args.command in ('update', 'redeploy', 'activate-test') and result.get('status') == 'rolled_back':
             return 1
         return 0
     except Exception:

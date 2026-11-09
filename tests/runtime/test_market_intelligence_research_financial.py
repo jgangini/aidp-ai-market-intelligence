@@ -129,16 +129,18 @@ def test_empty_financial_capture_does_not_send_an_empty_enum_or_allow_facts():
     store,model,collector,_=market_fixture(('financial_document',))
     store.begin('empty-financial','Compara ingresos')
     observed=[]
+    decision={'findings':[],'gap':{'description':'No hay documentos.','refinement_query':None},'financial_facts':[]}
     async def check(name,schema,payload):
         observed.append(schema)
         assert 'enum' not in schema['$defs']['MarketFinancialFact']['properties']['evidence_id']
-        return {'findings':[],'refinement_query':None,'gap':'No hay documentos.','financial_facts':[]}
+        return decision
     model.ask=check
     workflow=MarketWorkflow(store,model,collector,enabled_sources=('financial_document',))
     result=asyncio.run(workflow.ask('market_analyze',MarketAnalysis,{'task':{'source':'financial_document'},'evidence':[]},allowed_evidence=set()))
-    validator=Draft202012Validator(observed[0]);validator.validate(result)
+    validator=Draft202012Validator(observed[0]);validator.validate(decision)
+    MarketAnalysis.model_validate(result)
     fact,_=fact_fixture();fact.pop('quoted_text')
-    errors=list(validator.iter_errors({**result,'financial_facts':[fact]}))
+    errors=list(validator.iter_errors({**decision,'financial_facts':[fact]}))
     assert any(error.validator=='maxItems' and list(error.path)==['financial_facts'] for error in errors)
     assert result['financial_facts']==[] and len(observed)==1
 

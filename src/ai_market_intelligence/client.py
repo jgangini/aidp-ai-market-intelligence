@@ -13,26 +13,34 @@ from uuid import UUID
 from ai_market_intelligence.transport import AidpClient
 from ai_market_intelligence.errors import AidpProvisionConflict, AidpProvisionError, AidpProvisionPending, AidpRequestError
 from ai_market_intelligence.package import load_package
-from ai_market_intelligence.installation.agent_package import agent_package, authoring_files, validate_agent_config
+from ai_market_intelligence.installation.agent_package import agent_package, validate_agent_config
 from ai_market_intelligence.installation.compute import COMPUTE_NAME, prepare_compute
 from ai_market_intelligence.installation.credentials import ensure_apify_credential, _project_credential, existing_project_reference, created_by_operation
-from ai_market_intelligence.runtime.runtime_versions import RUNTIME_DISTRIBUTIONS
+from ai_market_intelligence.runtime.runtime_versions import TARGET_GRAPH_PACKAGES, RUNTIME_DISTRIBUTIONS
 from ai_market_intelligence.installation.playground import MarketPlaygroundClient, deployment_identity
 from ai_market_intelligence.installation.stream import MarketGatewayStream
 from ai_market_intelligence.installation.resources import resource
+from .installation.layout import AGENT_ROOT, LEGACY_AGENT_ROOT, agent_root, metadata_root
+from .runtime.package_identity import file_hashes, inventory_digest, source_identity, validate_inventory
 MODULE_ID = 'ai_market_intelligence'
 ROOT = '/Workspace/.artifact/' + MODULE_ID
-CONTROL_ROOT = '/Workspace/.control/modules/' + MODULE_ID
-AGENT_ROOT = ROOT + '/agents/' + MODULE_ID
+CONTROL_ROOT = ROOT + '/.control'
+LEGACY_CONTROL_ROOT = '/Workspace/.control/modules/' + MODULE_ID
 PHASES = ('verify', 'credentials', 'compute', 'files', 'agent', 'permissions', 'test', 'ready')
+UNSUPPORTED_LANGGRAPH_ERROR = 'TEST requires the selected managed LangGraph profile; reconcile the dependency environment before acceptance.'
 
 def runtime_config_hash(config):
     return hashlib.sha256(json.dumps(config, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
 
 
-def paused_runtime_config(config):
-    """Installer receipts may bind the selected model, never authorize research."""
+def validated_runtime_config(config):
     validate_agent_config(config)
+    return copy.deepcopy(config)
+
+
+def paused_runtime_config(config):
+    """Initial installation binds a model without authorizing research."""
+    config = validated_runtime_config(config)
     if config['research_enabled'] or (config.get('services') is not None and
             set(config['services']) != {'model_id', 'region', 'compartment_id'}):
         raise AidpProvisionConflict('The installer requires an exact paused model binding.')
@@ -40,21 +48,25 @@ def paused_runtime_config(config):
 
 
 def installation_phases(state):
-    return PHASES
+    return (PHASES + (('migration',) if isinstance(state.get('migration'), dict) else ())
+            + (('rebuild',) if isinstance(state.get('rebuild'), dict) else ()))
 
 def public_status(manifest=None):
     state = manifest or {}
-    model_binding = paused_runtime_config(state.get('runtime_config', {'schema_version': 1, 'research_enabled': False})).get('services', {})
+    config = validated_runtime_config(state.get('runtime_config', {'schema_version': 1, 'research_enabled': False}))
+    model_binding = config.get('services', {})
     pack = load_package(MODULE_ID, require_available=False)
     phases = installation_phases(state)
     suffix = state.get('resources', {}).get('apify_token_suffix', '')
     result = {'module_id': MODULE_ID, 'display_name': 'AI Market Intelligence', 'deployment_surface': 'TEST', 'status': state.get('status', 'not_installed'), 'installed': state.get('phase') == 'ready', 'phase': state.get('phase', 'not_installed'), 'enabled': False, 'operation_id': state.get('operation_id'), 'operation_type': 'install', 'message': state.get('message', ''), 'bundled_version': pack.pack_version, 'target_pack_sha256': state.get('pack_sha256'), 'bundled_pack_sha256': pack.pack_sha256, 'reuse_existing': state.get('reuse_existing', True), 'completed_phases': list(phases[:phases.index(state['phase'])]) if state.get('phase') in phases else [], 'apify_credential_status': 'configured' if state.get('resources', {}).get('apify_credential_key') else 'missing', 'apify_credential_owned_by_operation': bool(state.get('resources', {}).get('apify_credential_key')), 'apify_token_suffix': suffix if state.get('resources', {}).get('apify_credential_key') and isinstance(suffix, str) and re.fullmatch('[A-Za-z0-9]{4}', suffix) else '', 'test_sessions': state.get('test_sessions', [])}
     result['configured_agent_model_id'] = model_binding.get('model_id', '')
+    result.update(research_enabled=config['research_enabled'],
+                  enabled=config['research_enabled'] and state.get('phase') == 'ready')
     maintenance = state.get('maintenance')
     if isinstance(maintenance, dict):
         result['maintenance'] = {key: maintenance[key] for key in ('operation_id', 'action', 'phase', 'status') if key in maintenance}
         if maintenance.get('status') == 'running':
-            result.update(status='updating', phase=maintenance.get('phase', 'maintenance'))
+            result.update(status='updating', phase=maintenance.get('phase', 'maintenance'), enabled=False)
     return result
 
 class MarketProbeStream(MarketGatewayStream):
@@ -103,18 +115,31 @@ class MarketProbeStream(MarketGatewayStream):
 
 class MarketAidpClient(AidpClient):
     installation_root = ROOT
+    control_root = CONTROL_ROOT
     compute_name = COMPUTE_NAME
     _agent_name = MODULE_ID
 
     def _read_installation(self, workspace):
-        state = self._workspace_json(workspace, CONTROL_ROOT + '/installer.json', 'Invalid Market Intelligence installation receipt')
+        receipts = [(root, self._workspace_json(workspace, root + '/installer.json', 'Invalid Market Intelligence installation receipt'))
+                    for root in (CONTROL_ROOT, LEGACY_CONTROL_ROOT)]
+        present = [(root, state) for root, state in receipts if state is not None]
+        if len(present) > 1:
+            raise AidpProvisionConflict('Installation receipts exist at both control roots; preserve them for reconciliation.')
+        root, state = present[0] if present else (CONTROL_ROOT, None)
+        if state is not None:
+            try:
+                agent_root(state)
+                metadata_root(state)
+            except ValueError as exc:
+                raise AidpProvisionConflict(str(exc)) from None
         if state is not None and (state.get('module_id') != MODULE_ID or state.get('installer_version') != 2 or any(key in state for key in ('runtime_version', 'mode', 'previous_operation_id')) or (state.get('publication_root') != self.installation_root) or (state.get('workspace') != workspace) or (state.get('phase') not in installation_phases(state))):
             raise AidpProvisionConflict('An incompatible installation receipt exists; preserve it for reconciliation.')
+        self.control_root = root
         return state
 
     def _save(self, state):
         state['updated_at'] = datetime.now(timezone.utc).isoformat()
-        self._upload_file(state['workspace'], CONTROL_ROOT + '/installer.json', json.dumps(state, sort_keys=True, separators=(',', ':')).encode())
+        self._upload_file(state['workspace'], self.control_root + '/installer.json', json.dumps(state, sort_keys=True, separators=(',', ':')).encode())
 
     async def status(self):
 
@@ -158,10 +183,12 @@ class MarketAidpClient(AidpClient):
     def _advance(self, user, operation, reuse, token, session):
         workspace = str(self._workspace()['key'])
         state = self._read_installation(workspace)
+        if state and state.get('phase') in {'migration', 'rebuild'}:
+            raise AidpProvisionConflict('Resume the recorded migration or replacement before installing or updating this agent.')
         if state is None:
             config = self._selected_runtime_config()
-            self._ensure_workspace_layout(workspace, ('/Workspace/.control', '/Workspace/.control/modules', CONTROL_ROOT, '/Workspace/.artifact', self.installation_root, self.installation_root + '/agents', AGENT_ROOT))
-            state = {'installer_version': 2, 'module_id': MODULE_ID, 'workspace': workspace, 'publication_root': self.installation_root, 'operation_id': operation, 'owner': user, 'reuse_existing': reuse, 'phase': 'verify', 'status': 'installing', 'resources': {}, 'runtime_config': config, 'pack_sha256': load_package(MODULE_ID, require_available=False).pack_sha256}
+            self._ensure_workspace_layout(workspace, ('/Workspace/.artifact', self.installation_root, CONTROL_ROOT, self.installation_root + '/agents', AGENT_ROOT))
+            state = {'installer_version': 2, 'layout_version': 2, 'module_id': MODULE_ID, 'workspace': workspace, 'publication_root': self.installation_root, 'operation_id': operation, 'owner': user, 'reuse_existing': reuse, 'phase': 'verify', 'status': 'installing', 'resources': {}, 'runtime_config': config, 'pack_sha256': load_package(MODULE_ID, require_available=False).pack_sha256}
             self._save(state)
         if (state.get('maintenance') or {}).get('status') == 'running':
             raise AidpProvisionConflict('Resume the recorded maintenance operation; installation cannot overwrite its candidate.')
@@ -256,10 +283,12 @@ class MarketAidpClient(AidpClient):
             'compartment_id': self.settings.compartment_id}})
 
     def _runtime_config(self, state):
-        return paused_runtime_config(state.get('runtime_config', {'schema_version': 1, 'research_enabled': False}))
+        return validated_runtime_config(state.get('runtime_config', {'schema_version': 1, 'research_enabled': False}))
 
     def _descriptor(self, state):
         descriptor = {'module_id': 'ai_market_intelligence', 'schema_version': 1, 'operation_id': state['operation_id'], 'workspace': state['workspace'], 'owner': state['owner'], 'pack_sha256': state['pack_sha256']}
+        if 'layout_version' in state:
+            descriptor['layout_version'] = state['layout_version']
         if 'runtime_config' in state:
             descriptor['runtime_config_sha256'] = runtime_config_hash(self._runtime_config(state))
         return descriptor
@@ -273,21 +302,30 @@ class MarketAidpClient(AidpClient):
             self._saved_test_package(state)
 
     def _saved_test_package(self, state):
-        root = AGENT_ROOT
+        root = agent_root(state)
         descriptor = self._workspace_json(state['workspace'], root + '/agent-manifest.json', 'Invalid current package ownership')
         if descriptor != self._descriptor(state):
             raise AidpProvisionConflict('The submitted current package ownership changed.')
-        hashes = {}
-        for name in ('market_intelligence.py', 'requirements.txt'):
+        expected_hashes = state['resources'].get('package_hashes')
+        if state.get('layout_version') == 2:
+            try:
+                validate_inventory(expected_hashes)
+                if 'package-manifest.json' not in expected_hashes:
+                    raise ValueError('The modular package manifest is missing from its receipt')
+            except ValueError as exc:
+                raise AidpProvisionConflict(str(exc)) from None
+        files = {}
+        for name in (expected_hashes if state.get('layout_version') == 2 else ('market_intelligence.py', 'requirements.txt')):
             body, _ = self._workspace_object(state['workspace'], root + '/' + name, phase='content')
             if isinstance(body, str):
                 body = body.encode('utf-8')
             if not isinstance(body, bytes):
                 raise AidpProvisionConflict('The submitted current package cannot be read back exactly.')
-            hashes[name] = hashlib.sha256(body).hexdigest()
-        digest = hashlib.sha256(json.dumps(hashes, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+            files[name] = body
+        hashes = file_hashes(files)
+        digest = inventory_digest(hashes)
         resources = state['resources']
-        if digest != resources['test_intent'].get('package_sha256') or hashes['market_intelligence.py'] != resources.get('source_sha256'):
+        if digest != resources['test_intent'].get('package_sha256') or source_identity(files) != resources.get('source_sha256') or (expected_hashes is not None and hashes != expected_hashes):
             raise AidpProvisionConflict('The submitted current package bytes changed; its candidate was not replaced.')
 
     def _step(self, state, token, session):
@@ -314,7 +352,9 @@ class MarketAidpClient(AidpClient):
 
     def _files(self, state):
         workspace, resources = (state['workspace'], state['resources'])
-        root = AGENT_ROOT
+        root = agent_root(state)
+        if root != AGENT_ROOT:
+            raise AidpProvisionConflict('Legacy layout requires its saved installer; prepare an explicit layout migration before update.')
         descriptor = self._descriptor(state)
         previous = self._workspace_json(workspace, root + '/agent-manifest.json', 'Invalid current package ownership')
         if previous is not None and previous != descriptor:
@@ -325,21 +365,23 @@ class MarketAidpClient(AidpClient):
         if agents and self._agent_deployments(f"/workspaces/{workspace}/agents/{agents[0]['key']}/deployments"):
             raise AidpProvisionConflict('An existing production deployment requires a separately reviewed update.')
         source, assets = agent_package(self._runtime_config(state))
-        published = {'market_intelligence.py': source, **assets, **authoring_files()}
+        published = {'market_intelligence.py': source, **assets}
         if previous is None:
             for name in published:
                 body, headers = self._workspace_object(workspace, root + '/' + name, phase='content')
                 if self._workspace_object_exists(body, headers):
                     raise AidpProvisionConflict('Unowned files already exist in the current folder; no source was overwritten.')
         self._upload_file(workspace, root + '/agent-manifest.json', json.dumps(descriptor, sort_keys=True, separators=(',', ':')).encode(), repair_drift=False)
-        self._ensure_folder(workspace, root + '/ai_market_intelligence')
+        self._ensure_folder(workspace, root + '/core')
+        self._ensure_folder(workspace, root + '/core/decisions')
         for name, content in published.items():
             self._upload_file(workspace, root + '/' + name, content, repair_drift=False)
-        resources['source_sha256'] = hashlib.sha256(source).hexdigest()
+        resources['source_sha256'] = source_identity(published)
+        resources['package_hashes'] = file_hashes(published)
 
     def _agent(self, state):
         workspace, resources = (state['workspace'], state['resources'])
-        root = AGENT_ROOT
+        root = agent_root(state)
         descriptor = self._workspace_json(workspace, root + '/agent-manifest.json', 'Invalid current package ownership')
         if descriptor != self._descriptor(state):
             raise AidpProvisionConflict('The current package ownership changed before creating its agent.')
@@ -376,7 +418,7 @@ class MarketAidpClient(AidpClient):
                 def submitted(intent):
                     resources['test_intent'] = intent
                     self._save(state)
-                resources['test_receipt'] = client.refresh(workspace, resources['agent_key'], resources['agent_compute_key'], source, assets=assets, expected_workspace=workspace, agent_root=AGENT_ROOT, initialize=True, on_submit=submitted)
+                resources['test_receipt'] = client.refresh(workspace, resources['agent_key'], resources['agent_compute_key'], source, assets=assets, expected_workspace=workspace, agent_root=agent_root(state), initialize=True, on_submit=submitted)
                 self._save(state)
                 raise AidpProvisionPending('Preparing the paused current candidate in TEST.', 'test')
             rows = client.test_deployments(workspace, resources['agent_key'])
@@ -396,7 +438,10 @@ class MarketAidpClient(AidpClient):
             detail = client._request('GET', f'/workspaces/{workspace}/agentFlowSessions/{session_key}')
             if not bound_test_sessions([detail], resources['agent_key'], resources['agent_compute_key'], row['endpointUrl']):
                 raise AidpProvisionConflict('The selected session does not match the exact TEST endpoint, agent and compute.')
-            resources['test_verified'] = self._probe_market(row['endpointUrl'], session_key, resources['source_sha256'])
+            config = self._runtime_config(state)
+            resources['test_verified'] = self._probe_market(row['endpointUrl'], session_key, resources['source_sha256'],
+                **({'research_enabled': True, 'runtime_profile': config['services']['runtime_profile']}
+                   if config['research_enabled'] else {}))
             resources['test_verified']['deployment_identity'] = identity
             if client.test_deployments(workspace, resources['agent_key']) != rows:
                 raise AidpProvisionConflict('TEST changed during the probe; this revision was not accepted.')
@@ -437,7 +482,7 @@ class MarketAidpClient(AidpClient):
             self._save(state)
         raise AidpProvisionPending('Verifying the recorded TEST session binding.', 'test')
 
-    def _probe_market(self, endpoint, session, source_sha256):
+    def _probe_market(self, endpoint, session, source_sha256, *, research_enabled=False, runtime_profile=None):
         validate_test_endpoint(endpoint, self.settings.aidp_region)
         response = self.session.post(endpoint, auth=self.signer, stream=True, allow_redirects=False, timeout=(10, 120), json={'isStreamEnabled': True, 'input': [{'role': 'user', 'content': [{'type': 'INPUT_TEXT', 'text': 'inspect_runtime'}]}], 'sessionId': session, 'session_id': session, 'metadata': {}}, headers={'Accept': 'text/event-stream', 'x-session-id': session, 'x-deployment-type': 'TEST'})
         decoder = MarketProbeStream()
@@ -451,7 +496,8 @@ class MarketAidpClient(AidpClient):
                     raise AidpProvisionError('TEST exceeded the verification window.')
                 decoder.feed(chunk)
             decoder.finish()
-            return market_probe_receipt(decoder.result or {}, source_sha256)
+            return market_probe_receipt(decoder.result or {}, source_sha256,
+                                        research_enabled=research_enabled, runtime_profile=runtime_profile)
         finally:
             response.close()
 
@@ -489,13 +535,22 @@ def scoped_test_sessions(sessions, agent_key, compute_key):
     expected = {'agentFlowKey': agent_key, 'agentFlowComputeKey': compute_key}
     return [item for item in sessions if item.get('key') and item.get('deploymentType') in (None, 'TEST') and (item.get('lifecycleState') in (None, 'ACTIVE')) and all((item.get(key) == value for key, value in expected.items()))]
 
-def market_probe_receipt(result, source_sha256):
-    expected = {'source_sha256': source_sha256, 'schema_version': 1, 'research_enabled': False, 'business_tables_required': False, 'authenticated_session_bound': True, 'model_calls': 0, 'apify_starts': 0}
+def market_probe_receipt(result, source_sha256, *, research_enabled=False, runtime_profile=None):
+    if type(research_enabled) is not bool:
+        raise ValueError('Expected research mode must be explicit')
+    if research_enabled and not isinstance(runtime_profile, dict):
+        raise ValueError('Active verification requires its configured exact runtime profile')
+    expected = {'source_sha256': source_sha256, 'schema_version': 1, 'research_enabled': research_enabled, 'business_tables_required': False, 'authenticated_session_bound': True, 'model_calls': 0, 'apify_starts': 0}
     if any((type(result.get(key)) is not type(value) or result[key] != value for key, value in expected.items())):
-        raise AidpProvisionError('TEST did not verify this paused current source and authenticated session.')
+        raise AidpProvisionError('TEST did not verify this active current source and authenticated session.' if research_enabled
+                                 else 'TEST did not verify this paused current source and authenticated session.')
     versions = result.get('versions')
     if not isinstance(versions, dict) or not versions.get('python') or (not isinstance(versions.get('packages'), dict)):
         raise AidpProvisionError('TEST returned incomplete runtime observations.')
     if any((not versions['packages'].get(name) for name in RUNTIME_DISTRIBUTIONS)):
         raise AidpProvisionError('TEST is missing required runtime packages.')
-    return {'surface': 'TEST', 'source_sha256': source_sha256, 'research_enabled': False, 'versions': versions, 'model_calls': 0, 'apify_starts': 0, 'semantic_accepted': False, 'mcp_verified': False}
+    if any(versions['packages'].get(name) != version for name, version in TARGET_GRAPH_PACKAGES.items()):
+        raise AidpProvisionError(UNSUPPORTED_LANGGRAPH_ERROR)
+    if research_enabled and versions != runtime_profile:
+        raise AidpProvisionError('TEST active runtime differs from its configured exact dependency profile.')
+    return {'surface': 'TEST', 'source_sha256': source_sha256, 'research_enabled': research_enabled, 'versions': versions, 'model_calls': 0, 'apify_starts': 0, 'semantic_accepted': False, 'mcp_verified': False}

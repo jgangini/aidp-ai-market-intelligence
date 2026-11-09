@@ -18,9 +18,5 @@ terraform -chdir=terraform test
 if ($LASTEXITCODE -ne 0) { throw 'Terraform mocked tests failed' }
 uv run --locked python scripts/check_repository.py
 if ($LASTEXITCODE -ne 0) { throw 'Repository boundary/secret check failed' }
-if (Test-Path '.sentrux/rules.toml') {
-    sentrux check .
-    if ($LASTEXITCODE -ne 0) { throw 'Sentrux rules failed' }
-} else { Write-Output 'No Sentrux rules configured.' }
-sentrux gate .
+& (Join-Path $PSScriptRoot 'arch-scan.ps1')
 if ($LASTEXITCODE -ne 0) { throw 'Sentrux regression gate failed' }

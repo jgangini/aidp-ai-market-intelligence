@@ -1,0 +1,14 @@
+[
+  {
+    "id": "d1-captured-research",
+    "input": {"request_id": "d1-captured-research", "question": "que se dice de d1 en colombia"},
+    "require_model_call": true,
+    "assertions": [
+      {"path": "delivered", "equals": true},
+      {"path": "response.markdown", "not_empty": true},
+      {"path": "response.references", "not_empty": true}
+    ],
+    "trace_boundaries": true,
+    "clock_at": "2026-11-08T03:15:31+00:00"
+  }
+]

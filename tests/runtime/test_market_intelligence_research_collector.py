@@ -109,22 +109,75 @@ def test_market_youtube_channel_metadata_survives_the_provider_to_evidence_proje
     assert result['content_basis']=='title_and_description'
 
 
-def test_market_instagram_empty_marker_completes_its_known_receipt_and_does_not_restart():
-    from tests.runtime.test_market_intelligence_payload import provider_for
+def test_market_instagram_recent_posts_use_discovered_destinations_and_empty_receipt_is_not_restarted():
     provider,effects,collector=market_collection_fixture()
-    async def normalize(receipt,call,**kwargs):
-        route='https://www.instagram.com/popular/fixture-brand-reclamaciones'
-        row={'inputUrl':route,'url':route,'error':'no_items',
-             'errorDescription':'Empty or private data for provided input','requestErrorMessages':[]}
-        normalizer,_=provider_for([row])
-        return await normalizer.observations(receipt,call)
-    provider.observations=normalize
+    async def observe(receipt,call,**kwargs):
+        if call['actor']=='scraperlink/google-search-results-serp-scraper':
+            rows=[{'url':'https://instagram.com/fixturebrand','text':'Fixture brand public profile',
+                   'provenance':{'provider_run_id':receipt['runId'],'content_basis':'search_title_and_snippet'}}]
+        else:
+            assert call['actor']=='apify/instagram-post-scraper'
+            assert call['input']['username']==['https://instagram.com/fixturebrand']
+            assert call['input']['onlyPostsNewerThan']=='2026-10-27T12:00:00Z'
+            rows=[]
+        return SimpleNamespace(items=rows,coverage=None,cost=receipt['spent_microusd'])
+    provider.observations=observe
     result=market_collect(collector,source='instagram')
     assert result['status']=='partial' and result['evidence']==[]
-    assert market_collect(collector,source='instagram')==result and len(provider.starts)==1
-    operation=next(iter(effects.snapshot.read()[0]['operations'].values()))
-    assert operation['state']=='completed' and operation['result']['items']==[]
-    assert operation['receipt']['spent_microusd']==500
+    assert market_collect(collector,source='instagram')==result and len(provider.starts)==2
+    saved=effects.snapshot.read()[0]['operations']['fixture-operation-read']
+    assert saved['state']=='completed' and saved['result']['items']==[]
+    assert saved['receipt']['spent_microusd']==500
+
+
+def test_instagram_refinement_does_not_repeat_the_same_profile_or_consume_the_web_budget():
+    from ai_market_intelligence.runtime.provider import _social_result
+    provider,effects,collector=market_collection_fixture()
+    market_reserve_prior_reads(effects,count=10)
+    reads=[]
+    async def observe(receipt,call,**kwargs):
+        if call['actor']=='scraperlink/google-search-results-serp-scraper':
+            assert call['input']['tbs']=='cdr:1,cd_min:10/27/2026,cd_max:11/02/2026'
+            urls=['https://instagram.com/fixturebrand/reels','https://instagram.com/fixturebrand']
+            if reads:urls.append('https://instagram.com/otherbrand')
+            return SimpleNamespace(items=[{'url':url,'text':'Public profile',
+                'provenance':{'provider_run_id':receipt['runId']}} for url in urls],coverage=None,cost=500)
+        urls=call['input']['username'];reads.append(urls)
+        if len(reads)==1:
+            rows=[{'url':urls[0],'username':'fixturebrand','error':'not_found','errorDescription':'Profile does not exist'}]
+        else:
+            assert urls==['https://instagram.com/otherbrand']
+            rows=[{'url':'https://instagram.com/p/valid','inputUrl':urls[0],'caption':'A public caption.',
+                   'timestamp':'2026-11-01T12:00:00Z'}]
+        return _social_result(rows,receipt,call)
+    provider.observations=observe
+    first=market_collect(collector,source='instagram')
+    assert first['status']=='unavailable' and 'no demuestra' in first['limitations'][0]
+    assert 'incompatibles' not in first['limitations'][0]
+    assert market_collect(collector,source='instagram')==first and len(provider.starts)==2
+    second=asyncio.run(collector.collect(request_id='fixture-request',run_id='fixture-run',
+        operation_key='refinement',task={'source':'instagram','query':'Fixture brand','urls':[]},
+        brief={'start':'2026-10-27T12:00:00+00:00','end':'2026-11-02T12:00:00+00:00',
+               'retrieval_mode':'conversation'},previous_operation_id=None))
+    assert second['status']=='complete' and len(second['evidence'])==1
+    assert reads==[['https://instagram.com/fixturebrand/reels'],['https://instagram.com/otherbrand']]
+    assert len(effects.reserved_read_urls())==10
+
+
+def test_explicit_instagram_profile_aliases_are_read_once_without_broadening_authority():
+    from ai_market_intelligence.runtime.provider import _social_result
+    from ai_market_intelligence.runtime.social import social_destination_identity
+    urls=['https://instagram.com/fixturebrand/reels','https://instagram.com/fixturebrand']
+    provider,effects,collector=market_collection_fixture(explicit_urls=urls)
+    async def observe(receipt,call,**kwargs):
+        assert call['input']['username']==[urls[0]]
+        return _social_result([],receipt,call)
+    provider.observations=observe
+    result=market_collect(collector,source='instagram',urls=urls)
+    assert market_collect(collector,source='instagram',urls=urls)==result
+    assert len(provider.starts)==1
+    assert not collector.has_unread_candidates('fixture-operation',{'source':'instagram','urls':urls},{})
+    assert social_destination_identity('https://instagram.com/reel/POST1','instagram')!=social_destination_identity(urls[0],'instagram')
 
 
 def test_market_uncertain_start_is_not_repeated_even_without_returned_run_id():

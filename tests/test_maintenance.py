@@ -8,6 +8,8 @@ import pytest
 
 from ai_market_intelligence import maintenance as work
 from ai_market_intelligence.client import AGENT_ROOT, ROOT, MarketAidpClient, market_probe_receipt, RUNTIME_DISTRIBUTIONS
+from ai_market_intelligence.runtime.package_identity import package_manifest, source_identity, file_hashes
+from ai_market_intelligence.runtime.runtime_versions import TARGET_GRAPH_PACKAGES
 from ai_market_intelligence.errors import AidpProvisionConflict, AidpProvisionError, AidpProvisionPending
 
 
@@ -28,6 +30,21 @@ def encoded(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
 
 
+def candidate(source):
+    files = {'market_intelligence.py': source, 'requirements.txt': REQ,
+             'core/runtime.py': b'old authoring\n' if source == OLD else b'new authoring\n'}
+    files['package-manifest.json'] = encoded(package_manifest(files))
+    return files
+
+
+def assets_for(source):
+    return {name: raw for name, raw in candidate(source).items() if name != 'market_intelligence.py'}
+
+
+def identity(source):
+    return source_identity(candidate(source))
+
+
 class FakeNative:
     def __init__(self, client):
         self.client = client
@@ -43,12 +60,14 @@ class FakeNative:
         return {'key': session, 'agentFlowKey': 'agent', 'agentFlowComputeKey': 'compute',
                 'endpointUrl': ENDPOINT, 'deploymentType': 'TEST', 'lifecycleState': 'ACTIVE'}
 
-    def refresh(self, workspace, agent, compute, source, *, assets, expected_workspace, agent_root, initialize, on_submit):
+    def refresh(self, workspace, agent, compute, source, *, assets, expected_workspace, agent_root, initialize, on_submit,
+                metadata_root=None):
         assert (workspace, agent, compute, expected_workspace, agent_root, initialize) == (
-            'workspace', 'agent', 'compute', 'workspace', AGENT_ROOT, False)
-        assert assets == {'requirements.txt': REQ}
-        assert self.client.files[AGENT_ROOT + '/market_intelligence.py'] == source
-        digest = sha(encoded({'market_intelligence.py': sha(source), 'requirements.txt': sha(REQ)}))
+            'workspace', 'agent', 'compute', 'workspace', work.agent_root(self.client.saved), False)
+        assert metadata_root in (None, work.metadata_root(self.client.saved))
+        assert assets == (assets_for(source) if self.client.saved.get('layout_version') == 2 else {'requirements.txt': REQ})
+        assert self.client.files[agent_root + '/market_intelligence.py'] == source
+        digest = sha(encoded(file_hashes({'market_intelligence.py': source, **assets})))
         on_submit({'package_sha256': digest, 'previous_version': self.client.row['deploymentVersion']})
         saved = self.client.saved['maintenance']
         assert saved.get('target_intent') or saved.get('rollback_intent')
@@ -72,6 +91,7 @@ class FakeClient:
         self.reads = []
         self.lose_refresh = False
         self.fail_new_probe = False
+        self.langgraph_versions = {identity(NEW): '1.2.4', identity(OLD): '1.2.4'}
         self.fail_path = None
         self.compute_state = 'ACTIVE'
         self.compute_starts = []
@@ -81,17 +101,16 @@ class FakeClient:
         self.revoked = False
         self.revision = 0
         self.row = self.make_row()
-        hashes = {'market_intelligence.py': sha(OLD), 'requirements.txt': sha(REQ)}
-        self.saved = {'installer_version': 2, 'module_id': 'ai_market_intelligence', 'publication_root': ROOT,
+        hashes = file_hashes(candidate(OLD))
+        self.saved = {'installer_version': 2, 'layout_version': 2, 'module_id': 'ai_market_intelligence', 'publication_root': ROOT,
             'workspace': 'workspace', 'owner': 'owner', 'operation_id': INSTALL, 'pack_sha256': 'old-pack',
             'phase': 'ready', 'status': 'active', 'reuse_existing': True, 'runtime_config': self._selected_runtime_config(),
             'resources': {'agent_key': 'agent', 'agent_compute_key': 'compute', 'shared_oci_credential_key': 'shared',
-                          'apify_credential_key': 'apify', 'compute_creation_operation': INSTALL, 'source_sha256': sha(OLD),
+                          'apify_credential_key': 'apify', 'compute_creation_operation': INSTALL, 'source_sha256': identity(OLD), 'package_hashes': hashes,
                           'test_session_key': 'session', 'test_intent': {'package_sha256': sha(encoded(hashes))},
                           'test_verified': {'deployment_identity': work.deployment_identity(self.row)}}}
-        self.files = {AGENT_ROOT + '/market_intelligence.py': OLD, AGENT_ROOT + '/requirements.txt': REQ,
-                      AGENT_ROOT + '/ai_market_intelligence/runtime.py': b'old authoring\n',
-                      AGENT_ROOT + '/agent-manifest.json': encoded(self._descriptor(self.saved))}
+        self.files = {AGENT_ROOT + '/' + name: raw for name, raw in candidate(OLD).items()}
+        self.files[AGENT_ROOT + '/agent-manifest.json'] = encoded(self._descriptor(self.saved))
         self.original_files = copy.deepcopy(self.files)
         self.original_resources = copy.deepcopy(self.saved['resources'])
 
@@ -157,8 +176,9 @@ class FakeClient:
                     'description': 'AI Market Intelligence development compute; operation=' + INSTALL,
                     'driverConfig': {'driverShapeConfig': {'ocpus': 1, 'memoryInGBs': 16}}, 'lifecycleState': self.compute_state}
         assert path == '/workspaces/workspace/agents/agent'
-        return {'key': 'agent', 'type': 'CODE', 'pathInfo': AGENT_ROOT, 'entryFilePath': AGENT_ROOT + '/market_intelligence.py',
-                'dependenciesFilePath': AGENT_ROOT + '/requirements.txt', 'computeKey': 'compute'}
+        root = work.agent_root(self.saved)
+        return {'key': 'agent', 'type': 'CODE', 'pathInfo': work.metadata_root(self.saved), 'entryFilePath': root + '/market_intelligence.py',
+                'dependenciesFilePath': root + '/requirements.txt', 'computeKey': 'compute'}
 
     def _agent_deployments(self, path):
         return self.production
@@ -170,11 +190,11 @@ class FakeClient:
         assert endpoint == ENDPOINT and session in self.sessions
         self.probes.append(source_hash)
         self.probe_sessions.append(session)
-        if self.fail_new_probe and source_hash == sha(NEW):
+        if self.fail_new_probe and source_hash == identity(NEW):
             raise AidpProvisionError('TEST did not verify this paused current source and authenticated session.')
         return market_probe_receipt({'source_sha256': source_hash, 'schema_version': 1, 'research_enabled': False,
             'business_tables_required': False, 'authenticated_session_bound': True, 'model_calls': 0, 'apify_starts': 0,
-            'versions': {'python': '3.11.13', 'packages': {name: 'fixture-version' for name in RUNTIME_DISTRIBUTIONS}}}, source_hash)
+            'versions': {'python': '3.11.13', 'packages': {name: self.langgraph_versions.get(source_hash, '1.2.4') if name == 'langgraph' else TARGET_GRAPH_PACKAGES.get(name, 'fixture-version') for name in RUNTIME_DISTRIBUTIONS}}}, source_hash)
 
 
 @pytest.fixture
@@ -192,14 +212,138 @@ def client(monkeypatch):
     monkeypatch.setattr(work, 'MarketPlaygroundClient', lambda settings: FakeNative(client))
     monkeypatch.setattr(work, '_project_credential', lambda value: {'key': 'apify', 'description': 'AI Market Intelligence owned',
         'type': 'SECRET_TOKEN', 'lifecycleState': 'ACTIVE'})
-    monkeypatch.setattr(work, 'agent_package', lambda config: (NEW, {'requirements.txt': REQ}))
-    monkeypatch.setattr(work, 'authoring_files', lambda: {'ai_market_intelligence/runtime.py': b'new authoring\n'})
+    monkeypatch.setattr(work, 'agent_package', lambda config: (NEW, assets_for(NEW)))
     monkeypatch.setattr(work, 'load_package', lambda *a, **k: NS(pack_sha256='new-pack'))
     return client
 
 
 def run(client, action='update', operation=OP, **kw):
     return work.maintain(client, action, operation, sleep=lambda _: None, **kw)
+
+
+def published_fixture():
+    return {'key':'prod-fixed','agentKey':'agent','agentComputeKey':'compute','deploymentType':'PROD',
+            'lifecycleState':'ACTIVE','endpointUrl':'https://fixture.example/agent','runAsCredentialKey':'shared'}
+
+
+def test_explicit_test_update_preserves_the_pinned_production_snapshot(client):
+    client.production=[published_fixture()]
+    before=copy.deepcopy(client.production)
+    result=run(client,preserve_production=True)
+    assert result['status']=='completed' and client.refreshes==[NEW]
+    assert client.production==before==client.saved['maintenance']['prod_snapshot']
+    assert client.saved['resources']['agent_key']=='agent'
+    assert client.saved['resources']['agent_compute_key']=='compute'
+
+
+def test_production_change_during_source_write_blocks_commit_and_preserves_journal(client):
+    client.production=[published_fixture()]
+    upload=client._upload_file
+    def drift(workspace,path,content,**kwargs):
+        upload(workspace,path,content,**kwargs)
+        if path==AGENT_ROOT+'/market_intelligence.py':
+            client.production[0]['key']='foreign-new-prod'
+    client._upload_file=drift
+    with pytest.raises(AidpProvisionConflict,match='PROD snapshot changed'):
+        run(client,preserve_production=True)
+    assert client.saved['maintenance']['status']=='running'
+    assert client.saved['pack_sha256']=='old-pack' and client.refreshes==[]
+
+
+def test_failed_test_candidate_can_restore_files_without_mutating_production(client):
+    client.production=[published_fixture()]
+    before=copy.deepcopy(client.production)
+    client.fail_new_probe=True
+    result=run(client,preserve_production=True)
+    assert result['status']=='rolled_back' and client.refreshes==[NEW,OLD]
+    assert client.production==before and client.saved['pack_sha256']=='old-pack'
+
+
+def test_resume_cannot_silently_drop_the_production_snapshot_contract(client):
+    client.production=[published_fixture()]
+    with pytest.raises(AidpProvisionPending):
+        run(client,preserve_production=True,max_steps=1)
+    with pytest.raises(AidpProvisionConflict,match='explicit PROD-preserving'):
+        run(client)
+
+
+def test_production_change_after_test_verification_still_blocks_the_commit(client,monkeypatch):
+    client.production=[published_fixture()]
+    original=FakeNative.test_deployments
+    def drift(native,*args):
+        result=original(native,*args)
+        if native.client.saved.get('maintenance',{}).get('phase')=='commit':
+            native.client.production[0]['key']='foreign-publication'
+        return result
+    monkeypatch.setattr(FakeNative,'test_deployments',drift)
+    with pytest.raises(AidpProvisionConflict,match='PROD snapshot changed'):
+        run(client,preserve_production=True)
+    assert client.saved['maintenance']['status']=='running'
+    assert client.saved['pack_sha256']=='old-pack'
+
+
+def historical_journal(client, phase):
+    """A persisted v1 operation, not a v2 fixture reinterpreted at the new root."""
+    from ai_market_intelligence.client import LEGACY_CONTROL_ROOT
+    client.control_root = LEGACY_CONTROL_ROOT
+    state = copy.deepcopy(client.saved)
+    state.pop('layout_version')
+    state['resources'].pop('package_hashes')
+    state['resources']['source_sha256'] = sha(OLD)
+    state['resources']['test_intent'] = {'package_sha256': sha(encoded(file_hashes(
+        {'market_intelligence.py': OLD, 'requirements.txt': REQ})))}
+    before = {name: b'historical authoring\n' for name in work.legacy_inventory()}
+    before.update({'market_intelligence.py': OLD, 'requirements.txt': REQ,
+                   work.DESCRIPTOR: encoded(client._descriptor(state))})
+    target = {**before, 'market_intelligence.py': NEW,
+              work.DESCRIPTOR: encoded(client._descriptor({**state, 'pack_sha256': 'new-pack'}))}
+    config = client._runtime_config(state)
+    journal = {'schema_version': 1, 'operation_id': OP, 'action': 'update',
+               'phase': phase, 'status': 'running', 'before_state': copy.deepcopy(state),
+               'before_config_sha256': work.runtime_config_hash(config),
+               'target_config_sha256': work.runtime_config_hash(config), 'target_runtime_config': config,
+               'target_pack_sha256': 'new-pack', 'session_key': 'session',
+               'before_identity': work.deployment_identity(client.row),
+               'before_hashes': file_hashes(before), 'target_hashes': file_hashes(target)}
+    root = work.agent_root(state)
+    client.files = {root + '/' + name: raw for name, raw in before.items()}
+    for side, files in (('before', before), ('target', target)):
+        backup = work._backup_root(client, journal, side)
+        client.files.update({backup + '/' + name: raw for name, raw in files.items()})
+    if phase != 'backup':
+        client.files[root + '/market_intelligence.py'] = NEW
+    state['maintenance'] = journal
+    client.saved = state
+    return root, before
+
+
+def test_historical_journal_rolls_back_at_its_original_roots_and_identities(client):
+    root, before = historical_journal(client, 'target_files')
+    assert run(client, action='rollback')['status'] == 'rolled_back'
+    assert client.refreshes == [OLD] and client.probes == [sha(OLD)]
+    assert {name: client.files[root + '/' + name] for name in before} == before
+    assert 'layout_version' not in client.saved
+    assert 'package_hashes' not in client.saved['resources']
+    assert client.saved['operation_id'] == INSTALL
+    assert client.saved['resources']['agent_key'] == 'agent'
+    assert not any(path.startswith(AGENT_ROOT + '/core') for path in client.uploads)
+
+
+def test_historical_backup_requires_original_installer_without_writes(client):
+    historical_journal(client, 'backup')
+    before = copy.deepcopy(client.files)
+    with pytest.raises(AidpProvisionConflict, match='exact saved installer'):
+        run(client)
+    assert client.files == before and client.uploads == [] and client.refreshes == []
+
+
+def test_legacy_layout_is_not_silently_migrated_by_update(client):
+    historical_journal(client, 'backup')
+    client.saved.pop('maintenance')
+    before = copy.deepcopy(client.files)
+    with pytest.raises(AidpProvisionConflict, match='verified native rebinding'):
+        run(client)
+    assert client.files == before and client.uploads == [] and client.refreshes == []
 
 
 def assert_resource_identity_preserved(client):
@@ -211,7 +355,7 @@ def assert_resource_identity_preserved(client):
 def test_update_accepts_exact_revision_then_publishes_descriptor_and_receipt(client):
     result = run(client)
     assert result['status'] == 'completed' and result['deployment_surface'] == 'TEST' and result['research_enabled'] is False
-    assert client.refreshes == [NEW] and client.probes == [sha(NEW)]
+    assert client.refreshes == [NEW] and client.probes == [identity(NEW)]
     assert client.saved['pack_sha256'] == 'new-pack'
     assert json.loads(client.files[AGENT_ROOT + '/agent-manifest.json'])['pack_sha256'] == 'new-pack'
     assert_resource_identity_preserved(client)
@@ -221,7 +365,7 @@ def test_update_accepts_exact_revision_then_publishes_descriptor_and_receipt(cli
 
 
 def test_partial_file_write_resumes_from_backup_without_overwriting_drift(client):
-    client.fail_path = AGENT_ROOT + '/ai_market_intelligence/runtime.py'
+    client.fail_path = AGENT_ROOT + '/core/runtime.py'
     with pytest.raises(AidpProvisionPending):
         run(client, max_steps=2)
     assert client.saved['maintenance']['phase'] == 'target_files'
@@ -248,12 +392,15 @@ def test_refresh_timeout_is_never_resubmitted_and_requires_observed_revision(cli
     assert client.refreshes == [NEW]
 
 
-def test_confirmed_probe_failure_restores_old_source_and_preserves_data(client):
+@pytest.mark.parametrize('fault', ['source', 'langgraph'])
+def test_confirmed_probe_failure_restores_old_source_and_preserves_data(client, fault):
     client.files['/Workspace/customer/data.json'] = b'customer data remains'
-    client.fail_new_probe = True
+    client.fail_new_probe = fault == 'source'
+    if fault == 'langgraph':
+        client.langgraph_versions[identity(NEW)] = '1.0.1'
     result = run(client)
     assert result['status'] == 'rolled_back'
-    assert client.refreshes == [NEW, OLD] and client.probes == [sha(NEW), sha(OLD)]
+    assert client.refreshes == [NEW, OLD] and client.probes == [identity(NEW), identity(OLD)]
     assert client.saved['pack_sha256'] == 'old-pack'
     for path, raw in client.original_files.items():
         assert client.files[path] == raw
@@ -262,13 +409,30 @@ def test_confirmed_probe_failure_restores_old_source_and_preserves_data(client):
     assert run(client)['status'] == 'rolled_back' and client.refreshes == [NEW, OLD]
 
 
-def test_explicit_rollback_reuses_backup_and_its_single_refresh(client):
+def test_rollback_cannot_accept_an_unsupported_previous_runtime_or_repeat_refresh(client):
+    assert run(client)['status'] == 'completed'
+    client.langgraph_versions[identity(OLD)] = '0.6.7'
+    for _ in range(2):
+        with pytest.raises(AidpProvisionError, match='selected managed LangGraph profile'):
+            run(client, 'rollback')
+        assert client.saved['maintenance']['phase'] == 'rollback_wait'
+        assert 'rollback_verified' not in client.saved['maintenance']
+        assert client.refreshes == [NEW, OLD]
+    assert_resource_identity_preserved(client)
+
+
+@pytest.mark.parametrize('control_root', [work.CONTROL_ROOT, '/Workspace/.control/modules/ai_market_intelligence'])
+def test_explicit_rollback_reuses_backup_and_its_single_refresh(client, control_root):
+    client.control_root = control_root
     assert run(client)['status'] == 'completed'
     assert run(client, 'rollback')['status'] == 'rolled_back'
     assert client.refreshes == [NEW, OLD]
     assert run(client, 'rollback')['status'] == 'rolled_back'
     assert client.refreshes == [NEW, OLD]
     assert_resource_identity_preserved(client)
+    backup_paths = [path for path in client.uploads if '/maintenance/' in path]
+    assert backup_paths and all(path.startswith(control_root + '/maintenance/') for path in backup_paths)
+    assert all(path.startswith(control_root + '/maintenance/') for path in client.reads if '/maintenance/' in path)
 
 
 def test_selected_existing_session_survives_update_idempotent_repeat_and_rollback(client):
@@ -324,8 +488,7 @@ def test_revoked_administrator_cannot_resume_or_rollback(client):
 def test_redeploy_accepts_only_current_package_and_source(client, monkeypatch):
     with pytest.raises(AidpProvisionConflict, match='same package'):
         run(client, 'redeploy')
-    monkeypatch.setattr(work, 'agent_package', lambda config: (OLD, {'requirements.txt': REQ}))
-    monkeypatch.setattr(work, 'authoring_files', lambda: {'ai_market_intelligence/runtime.py': b'old authoring\n'})
+    monkeypatch.setattr(work, 'agent_package', lambda config: (OLD, assets_for(OLD)))
     monkeypatch.setattr(work, 'load_package', lambda *a, **k: NS(pack_sha256='old-pack'))
     assert run(client, 'redeploy')['status'] == 'completed'
     assert client.refreshes == [OLD]
@@ -428,7 +591,7 @@ def test_incomplete_probe_remains_reconcilable_without_refresh_or_rollback(clien
 
 
 @pytest.mark.parametrize('field,value', [
-    ('schema_version', True), ('schema_version', 2), ('operation_id', '../../outside'),
+    ('schema_version', True), ('schema_version', 3), ('operation_id', '../../outside'),
     ('action', 'delete'), ('action', []), ('status', 'invented'), ('phase', '../../outside'),
     ('session_key', '../foreign-session'),
 ])
@@ -489,7 +652,7 @@ def test_backup_state_cannot_restore_foreign_installation_or_resource_keys(clien
 def test_model_update_commits_frozen_config_and_rollback_restores_it(client,monkeypatch):
     original=copy.deepcopy(client.saved['runtime_config'])
     client.settings.agent_model_id='replacement-model'
-    monkeypatch.setattr(work,'agent_package',lambda config:(encoded(config),{'requirements.txt':REQ}))
+    monkeypatch.setattr(work,'agent_package',lambda config:(encoded(config),assets_for(encoded(config))))
     run(client)
     selected=client.saved['runtime_config']
     assert selected['services']['model_id']=='replacement-model'
@@ -506,7 +669,7 @@ def test_model_update_commits_frozen_config_and_rollback_restores_it(client,monk
 
 def test_pending_model_update_resumes_saved_target_instead_of_live_settings(client,monkeypatch):
     client.settings.agent_model_id='requested-model'
-    monkeypatch.setattr(work,'agent_package',lambda config:(encoded(config),{'requirements.txt':REQ}))
+    monkeypatch.setattr(work,'agent_package',lambda config:(encoded(config),assets_for(encoded(config))))
     with pytest.raises(AidpProvisionPending):
         run(client,max_steps=1)
     target=copy.deepcopy(client.saved['maintenance']['target_runtime_config'])
@@ -526,8 +689,7 @@ def test_same_operation_cannot_attest_a_different_model(client):
 
 
 def test_redeploy_cannot_change_model_even_when_package_and_mocked_program_match(client,monkeypatch):
-    monkeypatch.setattr(work,'agent_package',lambda config:(OLD,{'requirements.txt':REQ}))
-    monkeypatch.setattr(work,'authoring_files',lambda:{'ai_market_intelligence/runtime.py':b'old authoring\n'})
+    monkeypatch.setattr(work,'agent_package',lambda config:(OLD,assets_for(OLD)))
     monkeypatch.setattr(work,'load_package',lambda *a,**k:NS(pack_sha256='old-pack'))
     client.settings.agent_model_id='another-model'
     with pytest.raises(AidpProvisionConflict,match='Redeploy requires'):
@@ -563,7 +725,7 @@ def test_same_package_model_change_uses_update_and_can_restore_unbound_paused_re
     client.files[AGENT_ROOT+'/agent-manifest.json']=encoded(client._descriptor(client.saved))
     original_descriptor=client.files[AGENT_ROOT+'/agent-manifest.json']
     monkeypatch.setattr(work,'load_package',lambda *a,**k:NS(pack_sha256='old-pack'))
-    monkeypatch.setattr(work,'agent_package',lambda config:(encoded(config),{'requirements.txt':REQ}))
+    monkeypatch.setattr(work,'agent_package',lambda config:(encoded(config),assets_for(encoded(config))))
     run(client)
     assert client.saved['runtime_config']['services']['model_id']=='selected-model'
     assert client.saved['pack_sha256']=='old-pack'

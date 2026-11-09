@@ -12,6 +12,7 @@ from pathlib import PurePosixPath
 
 from ai_market_intelligence.transport import AidpClient
 from ai_market_intelligence.errors import AidpProvisionConflict
+from .layout import AGENT_ROOT, LEGACY_AGENT_ROOT, require_source_tree
 
 
 class MarketPlaygroundClient(AidpClient):
@@ -40,11 +41,16 @@ class MarketPlaygroundClient(AidpClient):
         return rows
 
     def refresh(self, workspace, agent_key, compute_key, source, *, assets, expected_workspace, on_submit=None,
-                agent_root='/Workspace/.artifact/ai_market_intelligence/agents/ai_market_intelligence', initialize=False):
+                agent_root=AGENT_ROOT, initialize=False, metadata_root=None):
         if workspace != expected_workspace:
             raise RuntimeError('Playground workspace identity changed')
-        if agent_root != '/Workspace/.artifact/ai_market_intelligence/agents/ai_market_intelligence':
+        if agent_root not in (AGENT_ROOT, LEGACY_AGENT_ROOT):
             raise ValueError('Unknown Market Intelligence installation root')
+        metadata_root = agent_root if metadata_root is None else metadata_root
+        if metadata_root not in (AGENT_ROOT, LEGACY_AGENT_ROOT):
+            raise ValueError('Unknown Market Intelligence metadata root')
+        if metadata_root != agent_root:
+            raise AidpProvisionConflict('CODE metadata and executable source must share the installation root before TEST.')
         if not isinstance(source, bytes) or not source:
             raise ValueError('The exact saved candidate is required')
         candidate = _candidate(source, assets)
@@ -55,7 +61,7 @@ class MarketPlaygroundClient(AidpClient):
                 raise RuntimeError('Playground workspace identity changed')
             detail = ga._request('GET', f'/workspaces/{workspace}/agents/{agent_key}')
             entry = agent_root + '/market_intelligence.py'
-            expected = {'type': 'CODE', 'entryFilePath': entry, 'pathInfo': agent_root,
+            expected = {'type': 'CODE', 'entryFilePath': entry, 'pathInfo': metadata_root,
                         'dependenciesFilePath': agent_root + '/requirements.txt', 'computeKey': compute_key}
             if any(detail.get(key) != value for key, value in expected.items()):
                 raise RuntimeError('Playground candidate binding differs from the project agent')
@@ -64,6 +70,7 @@ class MarketPlaygroundClient(AidpClient):
                 body, _ = ga._workspace_object(workspace, root + name, phase='content')
                 if not ga._content_matches(body, content):
                     raise RuntimeError('Saved native package differs from the candidate: ' + name)
+            require_source_tree(ga, workspace, agent_root, candidate)
         finally:
             ga.session.close()
         rows = self.test_deployments(workspace, agent_key)

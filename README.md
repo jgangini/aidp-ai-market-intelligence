@@ -1,49 +1,56 @@
 # AIDP AI Market Intelligence
 
-Paquete para instalar y mantener un agente de investigación de mercado en **Oracle AI Data Platform Workbench**. Deploy Studio configura AIDP, identidad, almacenamiento de artefactos, modelo OCI y memoria Autonomous; los hooks instalan el agente y su AI Compute en TEST.
+Agente de investigación de mercado para **Oracle AI Data Platform (AIDP)**, construido con LangGraph. Interpreta preguntas de negocio, consulta fuentes pertinentes y entrega hallazgos con referencias y límites de cobertura. Puede investigar empresas, marcas, productos o sectores; no contiene reglas específicas para un cliente.
 
-El instalador deja la investigación **pausada**. El runtime contiene conectores web/sociales, fuentes financieras, respuestas con evidencias y recuperación por solicitud; su activación requiere configuración completa y aceptación nativa. Instalar el paquete no inicia inferencia, actores Apify ni trabajos programados.
+## Qué hace
+
+- Investiga conversación pública en web, X, Facebook, Instagram y YouTube según las fuentes habilitadas y las restricciones del encargo.
+- Utiliza documentos financieros, datos de mercado y World Bank para preguntas financieras o económicas pertinentes.
+- Ejecuta ramas por fuente en paralelo, con límites compartidos para capturas y llamadas al modelo.
+- Publica progreso por fuente, cápsulas verificadas y una respuesta final mediante streaming.
+- Conserva evidencias, solicitudes y efectos externos para diagnóstico, recuperación y seguimiento de una conversación.
+
+Ejemplos: «¿Qué se dice de D1 en Colombia?», «¿Y en Instagram?», «Compara los ingresos reportados de estas empresas». Una fuente habilitada no garantiza resultados: el acceso, el contenido disponible y la calidad de la evidencia determinan la cobertura.
+
+## Cómo funciona
+
+El coordinador normaliza entidad, objetivo, periodo y fuentes. Cada rama captura, analiza y revisa su evidencia. Después, el coordinador consolida los hallazgos admitidos y construye las referencias y la nota de alcance. Una respuesta puede ser parcial cuando faltan fuentes o hallazgos publicables; tener referencias no demuestra exhaustividad ni corrección por sí solo.
+
+El proyecto incluye el agente, su paquete de distribución, una CLI administrativa y hooks de Deploy Studio. Utiliza los clientes de AIDP y Agent Hub; no incorpora portal propio, servidor HTTP ni VM administrativa.
 
 ## Componentes
 
-| Componente | Responsabilidad |
+| Ruta | Responsabilidad |
 | --- | --- |
-| `terraform/` | Crear o referenciar AIDP, bucket de artefactos y Autonomous AI Lakehouse 26ai DW. |
-| `terraform/hooks/` y `src/ai_market_intelligence/` | Validar identidad/destino, enlazar memoria e instalar, reanudar, actualizar o recuperar el agente. |
-| `aidp/` y `package/lab.json` | Fuentes canónicas del agente, descriptores, dependencias y hashes del paquete. |
-| `aidp-market` | Comprobación local del paquete y operación de una instalación existente. |
+| `aidp/workspaces/default/files/agents/market_intelligence.py` | Entrada AIDP del agente. |
+| `aidp/workspaces/default/files/agents/core/` | Grafo, decisiones y prompts, conectores, evidencias, memoria y protocolo. |
+| `src/ai_market_intelligence/` | Instalación, configuración, mantenimiento y recuperación. |
+| `terraform/` | Recursos y formulario de Deploy Studio, con modos de creación y reutilización. |
+| `package/lab.json` | Inventario y hashes del paquete canónico. |
+| `scripts/` y `tests/` | Desarrollo local, validación y ejemplos de consumo. |
 
-El producto se integra en Deploy Studio y Workbench. No incorpora portal propio, servidor HTTP ni VM administrativa.
+## Despliegue y acceso
 
-## Requisitos
+Deploy Studio prepara o reutiliza AIDP, almacenamiento y memoria Autonomous, y sus hooks instalan el agente en TEST. La investigación comienza pausada; su activación requiere el binding completo de servicios. Para utilizarlo desde Agent Hub también se publica el endpoint y se verifica su registro en AI Registry. Estas operaciones se describen en [despliegue](docs/deployment.md) y [operación](docs/operations.md).
 
-- Cuenta OCI con permisos para los recursos elegidos, acceso regional a AIDP y al modelo OCI seleccionado.
-- Identity Domain activo y administrador elegible. El operador firma las solicitudes; seleccionar otro usuario no lo suplanta.
-- Autonomous AI Lakehouse **26ai DW**, nuevo o existente, para la memoria nativa de Agent Flow.
-- Token Apify para install/update/redeploy. Su comprobación es de lectura; no demuestra permiso para ejecutar actores.
-- Deploy Studio con los selectores AIDP/dominio/administrador y el contrato de memoria sin wallet descritos en la [guía de despliegue](docs/deployment.md).
+## Desarrollo
 
-## Instalación
-
-Selecciona **AIDP AI Market Intelligence** y una release en Deploy Studio. Elige crear servicios o reutilizar recursos existentes, completa los grupos del formulario y ejecuta preflight. Revisa el plan y la propiedad de los recursos antes de autorizar apply. Post-apply comprueba la asociación de memoria y publica el candidato TEST pausado.
-
-Para una plataforma compartida con Governance, conserva su AIDP, workspace, bucket y la base de memoria ya asociada. La [guía de despliegue](docs/deployment.md) explica los parámetros, secretos y comprobaciones de ambos modos.
-
-## Desarrollo local
-
-El entorno local validado utiliza Python 3.11 y `uv`; Node ejecuta las pruebas del protocolo de streaming. Terraform requiere los proveedores del lock inicializados.
+El entorno usa Python 3.11 y `uv`; Node ejecuta las pruebas del protocolo. Terraform se valida por separado.
 
 ```powershell
 uv sync --locked
 uv run aidp-market package-check
 ```
 
-`package-check` verifica y compila fuentes locales sin usar credenciales. Para la validación integrada, consulta [operación y comprobaciones](docs/operations.md). Los comandos de instalación y mantenimiento sí necesitan un destino OCI autorizado.
+`package-check` comprueba fuentes e inventario sin utilizar credenciales. Las consultas reales y las operaciones AIDP requieren configuración privada y acceso OCI autorizado.
 
-## Guías
+## Documentación
 
-- [Despliegue: requisitos, parámetros y secretos](docs/deployment.md)
-- [Operación: estado, Resume, actualización y recuperación](docs/operations.md)
-- [Distribución y verificación de releases](docs/release-handoff.md)
+- [Arquitectura y fuentes](docs/architecture.md)
+- [Despliegue con Deploy Studio](docs/deployment.md)
+- [Operación, publicación y recuperación](docs/operations.md)
+- [Desarrollo y validación](docs/development.md)
+- [Evaluación de calidad](docs/quality.md)
+- [Distribución del paquete](docs/distribution.md)
 
-El [repositorio es público](https://github.com/jgangini/aidp-ai_market-intelligence). Credenciales, Terraform state y recibos de operaciones permanecen fuera de Git. La publicación PROD, delete y transferencia de state no están implementadas. La asociación real de memoria, continuidad de checkpoints, permisos y entorno nativo requieren aceptación OCI; las pruebas con mocks no la sustituyen.
+Credenciales, estados Terraform, configuraciones del tenant y recibos reales permanecen fuera de Git. La investigación puede consumir servicios de modelo y actores Apify de pago. El agente puede omitir información o equivocarse; las decisiones de negocio requieren revisar sus fuentes y cobertura.

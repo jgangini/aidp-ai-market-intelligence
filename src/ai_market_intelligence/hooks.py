@@ -23,6 +23,19 @@ def _outputs(context):
             for key, row in context.get('terraform_outputs', {}).items()}
 
 
+def _artifact_context(context):
+    fields = context['inputs']
+    mode = fields['artifacts_bucket_mode']
+    if mode not in ('new', 'existing'):
+        raise ValueError('Choose new or existing artifacts bucket')
+    name = fields.get('existing_artifacts_bucket_name') if mode == 'existing' else fields.get('artifacts_bucket_name')
+    if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,256}', name):
+        raise ValueError('Select the exact artifacts bucket name')
+    if mode == 'existing' and fields.get('artifacts_bucket_name') not in (None, '', name):
+        raise AidpProvisionConflict('The resolved artifacts bucket differs from the existing selection')
+    return {**context, 'inputs': {**fields, 'artifacts_bucket_name': name}}
+
+
 def _settings(context, config_file, *, post_apply):
     fields = context['inputs']
     outputs = _outputs(context) if post_apply else {}
@@ -60,6 +73,7 @@ def _platform(client, *, newly_owned=False, deployment_binding=''):
 
 
 def preflight(context, secrets, config_file):
+    context = _artifact_context(context)
     fields = context['inputs']
     action = fields.get('lifecycle_action', 'install')
     if action not in ('install', 'update', 'redeploy', 'rollback'):
@@ -120,7 +134,7 @@ def preflight(context, secrets, config_file):
         events.append({'name': 'Recovery', 'status': 'warning',
             'message': 'Rollback restores recorded paused artifacts only; no Apify or model call is required or started.'})
         return {'inputs': {'home_region': home[0], 'identity_domain_url': domain_url,
-                           'objectstorage_namespace': namespace}, 'events': events}
+                           'objectstorage_namespace': namespace, 'artifacts_bucket_name': fields['artifacts_bucket_name']}, 'events': events}
     model_config = {**config, 'region': context['region']}
     model = oci.generative_ai.GenerativeAiClient(model_config, signer=signer).get_model(fields['agent_model_id']).data
     if model.lifecycle_state != 'ACTIVE':
@@ -140,7 +154,7 @@ def preflight(context, secrets, config_file):
     events.append({'name': 'Apify execution', 'status': 'warning',
                    'message': 'Execution permission/entitlement not verified without starting runs. Research stays paused.'})
     return {'inputs': {'home_region': home[0], 'identity_domain_url': domain_url,
-                       'objectstorage_namespace': namespace}, 'events': events}
+                       'objectstorage_namespace': namespace, 'artifacts_bucket_name': fields['artifacts_bucket_name']}, 'events': events}
 
 
 def operation_id(deployment_id):
@@ -168,6 +182,7 @@ def maintenance_operation_id(context, action, package_sha256):
 
 
 def post_apply(context, secrets, config_file):
+    context = _artifact_context(context)
     outputs = _outputs(context)
     operation = operation_id(context['deployment_id'])
     action = context['inputs'].get('lifecycle_action', 'install')
@@ -223,12 +238,13 @@ def post_apply(context, secrets, config_file):
             status = maintain(client, action, operation, test_session_id=session)
         recovered_failure = status['status'] == 'rolled_back' and action != 'rollback'
         return {'outputs': {'installation_status': status['status'], 'installation_phase': status['phase'],
-            'operation_id': status['operation_id'], 'deployment_surface': 'TEST', 'research_enabled': False,
+            'operation_id': status['operation_id'], 'deployment_surface': 'TEST', 'research_enabled': status.get('research_enabled', False),
             'apify_execution_permission': 'not_verified', 'workspace_key': workspace['key'], 'maintenance_action': action,
             'autonomous_database_id': memory_database_id, 'memory_status': 'READY',
             'configured_agent_model_id': status.get('configured_agent_model_id', '')},
             'events': [{'level': 'error' if recovered_failure else 'success',
                 'message': ('Candidate update failed; the previous TEST candidate was restored and verified.' if recovered_failure
+                            else 'Market lifecycle operation verified in TEST with research enabled.' if status.get('research_enabled', False)
                             else 'Market lifecycle operation verified in TEST with research paused.')}]}
     finally:
         asyncio.run(client.close())

@@ -317,3 +317,14 @@ def test_valid_identity_without_caption_is_omitted_with_visible_coverage(platfor
     parse=facebook_search_observations if platform=='facebook' else instagram_search_observations
 
     with pytest.raises(ValueError):parse([good,invalid],RECEIPT,search_call(platform))
+
+
+def test_instagram_observed_unavailable_like_count_preserves_caption_and_unknown_metric():
+    row={**instagram_row(),'likesCount':-1}
+    parsed=instagram_search_observations([row],RECEIPT,search_call('instagram'))[0]
+    assert parsed['metrics']['likes'] is None and parsed['text']==row['caption']
+    for field,value in [('likesCount',-2),('likesCount',True),('commentsCount',-1)]:
+        with pytest.raises(ValueError):
+            instagram_search_observations([{**row,field:value}],RECEIPT,search_call('instagram'))
+    with pytest.raises(ValueError):
+        facebook_search_observations([{**facebook_row(),'likes':-1}],RECEIPT,search_call('facebook'))

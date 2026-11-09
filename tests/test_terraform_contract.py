@@ -1,11 +1,69 @@
 """Deployment contract invariants; native ownership tests live in terraform/tests."""
 import json
+from collections import Counter
 from pathlib import Path
 import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = json.loads((ROOT / "terraform/deploy-studio.json").read_text(encoding="utf-8"))
+
+
+def test_declarative_form_places_every_field_and_file_exactly_once():
+    assert MANIFEST["schema_version"] == 2
+    form = MANIFEST["form"]
+    groups = form["groups"]
+    assert len({group["id"] for group in groups}) == len(groups)
+    placed = Counter()
+    for group in groups:
+        assert group["title"].strip() and group["items"]
+        for item in group["items"]:
+            assert item["kind"] in {"field", "file", "control"}
+            assert item.get("span", 2) in {1, 2}
+            if item["kind"] != "control":
+                placed[item["kind"], item["name"]] += 1
+                collection = form["fields" if item["kind"] == "field" else "files"]
+                definition = next(entry for entry in collection if entry["name"] == item["name"])
+                assert definition.get("group", group["id"]) == group["id"]
+    expected = Counter((kind, entry["name"]) for kind, key in (("field", "fields"), ("file", "files"))
+                       for entry in form.get(key, []))
+    assert placed == expected
+    assert all(count == 1 for count in placed.values())
+
+
+def test_declarative_credentials_and_destination_controls_match_capabilities():
+    groups = MANIFEST["form"]["groups"]
+    assert groups[0]["id"] == "credentials"
+    assert [(item["kind"], item["name"]) for item in groups[0]["items"]] == [
+        ("control", "oci_config"), ("control", "oci_key")]
+    controls = [item for group in groups for item in group["items"] if item["kind"] == "control"]
+    assert Counter(item["name"] for item in controls) == Counter([
+        "oci_config", "oci_key", "oci_region", "compartment_mode", "new_compartment", "existing_compartment"])
+    assert all(item["label"].strip() for item in controls)
+    services = next(group for group in groups if group["id"] == "services")
+    assert services["items"][0]["name"] == "oci_region"
+    assert services["items"][0]["span"] == 2
+    mode = next(item for item in controls if item["name"] == "compartment_mode")
+    assert [option["value"] for option in mode["options"]] == MANIFEST["capabilities"]["compartment_modes"]
+    assert all(option["label"].strip() for option in mode["options"])
+    assert MANIFEST["capabilities"]["existing_database_wallet"] == "none"
+
+
+def test_visible_form_matches_governance_layout_except_apify():
+    groups = {g['id']: [i['name'] for i in g['items']] for g in MANIFEST['form']['groups']}
+    assert groups['aidp_platform'] == ['aidp_mode', 'new_aidp_name', 'existing_ai_data_platform_ocid', 'existing_workspace_key']
+    assert groups['enterprise_ai'] == ['agent_model_id', 'apify_token']
+    assert groups['artifacts'] == ['artifacts_bucket_mode', 'artifacts_bucket_name', 'existing_artifacts_bucket_name']
+    assert groups['database'] == ['autonomous_database_mode', 'autonomous_database_version', 'existing_autonomous_database_ocid', 'autonomous_database_admin_password']
+    fields = {f['name']: f for f in MANIFEST['form']['fields']}
+    assert len(fields) == 15 and not {'test_session_id', 'autonomous_database_compute_count'} & fields.keys()
+    assert fields['admin_user_ocid']['label'] == 'AIDP administrator'
+    assert fields['new_aidp_name']['default'] == 'aidp_market_intelligence'
+    assert fields['new_aidp_name']['visible_when'] == {'field': 'aidp_mode', 'equals': 'new'}
+    assert fields['artifacts_bucket_mode']['default'] == 'existing'
+    assert fields['agent_model_id']['default'] == 'xai.grok-4.7'
+    assert fields['autonomous_database_version']['options'] == [
+        {'value': '26ai:DW', 'label': 'Oracle AI Database 26ai · AI Lakehouse (DW)'}]
 
 
 def test_apify_secret_cannot_enter_terraform_or_public_outputs():
@@ -25,6 +83,9 @@ def test_memory_password_uses_protected_hooks_without_aidp_state_credential():
     fields = {field["name"]: field for field in MANIFEST["form"]["fields"]}
     secret = fields['autonomous_database_admin_password']
     assert secret['secret'] and secret['type'] == 'password' and 'default' not in secret
+    assert secret['generate_password'] is True
+    assert secret['generate_password_when'] == {'field': 'autonomous_database_mode', 'equals': 'new'}
+    assert not fields['apify_token'].get('generate_password', False)
     for hook in ('preflight', 'post_apply'):
         assert 'autonomous_database_admin_password' in MANIFEST[hook]['secret_inputs']
     terraform = '\n'.join(p.read_text() for p in (ROOT/'terraform').glob('*.tf'))
@@ -87,9 +148,10 @@ def test_hook_archive_covers_only_portable_public_sources():
     for relative in includes:
         assert not Path(relative).is_absolute()
         assert not set(Path(relative).parts) & {".oci", ".local", ".git", "apps", "node_modules"}
-    steps = [step["key"] for step in MANIFEST["run_steps"]]
-    assert steps[0] == "queue" and "apply" in steps and steps[-1] == "complete"
-    assert len(steps) == len(set(steps))
+    assert MANIFEST["execution_source"] == "oci_resource_manager"
+    assert [step["key"] for step in MANIFEST["run_steps"]] == [
+        "queue", "credentials", "compartment", "plan", "apply", "application", "complete",
+    ]
 
 
 def test_transient_preflight_id_is_not_persisted_as_deployment_ownership():

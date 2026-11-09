@@ -43,8 +43,8 @@ def prepare_frozen_study(root,snapshot_path,binding_path,context_path,study):
         'binding_sha256':checksum(output/'binding.json'),
         'context_file':(output/'context.json').relative_to(root).as_posix(),
         'context_sha256':checksum(output/'context.json'),
-        'factory_sha256':checksum(root/'aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/factory.py'),
-        'adapter_sha256':checksum(root/'aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/model_bridge.py'),'candidate_revision':revision}
+        'factory_sha256':checksum(root/'aidp/workspaces/default/files/agents/core/factory.py'),
+        'adapter_sha256':checksum(root/'aidp/workspaces/default/files/agents/core/model_bridge.py'),'candidate_revision':revision}
     return output,captured,fields
 
 

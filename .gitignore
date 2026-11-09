@@ -1,6 +1,8 @@
 .oci/
 .local/
 .aidp-local/
+aidp-agent.toml
+test-campaign.json
 .venv/
 .pytest_cache/
 pytest-cache-files-*/
@@ -12,6 +14,8 @@ __pycache__/
 *.tfvars
 !terraform/example.tfvars.json
 .sentrux/baseline.json
+.sentrux/baseline-provenance.json
+node-progress.json
 dist/
 build/
 .env*

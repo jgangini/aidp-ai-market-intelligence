@@ -16,6 +16,7 @@ DOMAIN = 'ocid1.domain.oc1..synthetic'
 def context(mode='new'):
     fields = {'aidp_mode': mode, 'identity_domain_id': DOMAIN, 'admin_user_ocid': USER,
         'agent_model_id': 'model', 'artifacts_bucket_mode': 'new', 'artifacts_bucket_name': 'artifacts',
+        'existing_artifacts_bucket_name': 'artifacts',
         'autonomous_database_mode': 'existing', 'existing_autonomous_database_ocid': 'ocid1.autonomousdatabase.oc1..synthetic'}
     if mode == 'existing':
         fields.update(existing_ai_data_platform_ocid='ocid1.aidataplatform.oc1..synthetic', existing_workspace_key='exact-key')
@@ -59,7 +60,7 @@ def test_new_preflight_does_not_consult_nonexistent_aidp_roles(native, monkeypat
     monkeypatch.setattr(hooks, 'MarketAidpClient', lambda *a: pytest.fail('New platform has no roles yet'))
     result = hooks.preflight(context(), secrets(), 'synthetic-config')
     assert result['inputs'] == {'home_region': 'us-ashburn-1', 'identity_domain_url': 'https://domain.identity.oraclecloud.com',
-        'objectstorage_namespace': 'namespace'}
+        'objectstorage_namespace': 'namespace', 'artifacts_bucket_name': 'artifacts'}
     assert native.auth.call_args.kwargs == {'roles_required': False}
     assert result['events'][-1]['status'] == 'warning'
     assert 'not verified' in result['events'][-1]['message']
@@ -207,9 +208,11 @@ def test_postapply_binds_exact_owned_bucket_before_install(monkeypatch, foreign_
         result = hooks.post_apply(c, secrets(), 'config')
         assert result['outputs']['research_enabled'] is False
         assert result['outputs']['deployment_surface'] == 'TEST'
+        assert result['outputs']['maintenance_action'] == 'install'
         assert result['outputs']['operation_id'] == hooks.operation_id(DEPLOYMENT)
         assert install.call_args.args[0].settings.aidp_workspace_key == 'resolved-exact-key'
         assert install.call_args.kwargs['new_platform'] is True
+        assert install.call_args.kwargs['test_session_id'] is None
         assert platform.call_args.kwargs['deployment_binding'] == binding
         memory.assert_called_once()
         assert auth.call_args.kwargs == {'roles_required':False}
@@ -229,3 +232,29 @@ def test_maintenance_rejects_new_memory_before_loading_credentials(monkeypatch):
     monkeypatch.setattr(hooks.oci.config, 'from_file', lambda *args: pytest.fail('Must reject before credentials'))
     with pytest.raises(AidpProvisionConflict, match='cannot create infrastructure'):
         hooks.preflight(c, {}, 'config')
+
+
+def test_existing_bucket_selection_resolves_exact_name_without_mutating_context():
+    c = context('existing')
+    c['inputs'].update(artifacts_bucket_mode='existing', existing_artifacts_bucket_name='selected-bucket')
+    c['inputs'].pop('artifacts_bucket_name')
+    resolved = hooks._artifact_context(c)
+    assert resolved['inputs']['artifacts_bucket_name'] == 'selected-bucket'
+    assert 'artifacts_bucket_name' not in c['inputs']
+
+
+@pytest.mark.parametrize('selected', ['', 'wrong bucket', 'bucket/other'])
+def test_invalid_existing_bucket_selection_is_rejected_before_credentials(monkeypatch, selected):
+    c = context('existing')
+    c['inputs'].update(artifacts_bucket_mode='existing', existing_artifacts_bucket_name=selected)
+    monkeypatch.setattr(hooks.oci.config, 'from_file', lambda *args: pytest.fail('Reject before credentials'))
+    with pytest.raises(ValueError, match='bucket name'):
+        hooks.preflight(c, {}, 'config')
+
+
+def test_changed_resolved_bucket_is_rejected_before_postapply_clients(monkeypatch):
+    c = context('existing')
+    c['inputs'].update(artifacts_bucket_mode='existing', existing_artifacts_bucket_name='different-bucket')
+    monkeypatch.setattr(hooks, 'MarketAidpClient', lambda *args: pytest.fail('Reject before native clients'))
+    with pytest.raises(AidpProvisionConflict, match='differs'):
+        hooks.post_apply(c, {}, 'config')

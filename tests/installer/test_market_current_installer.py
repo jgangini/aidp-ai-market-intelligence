@@ -57,24 +57,67 @@ def test_market_phases_never_create_sql_tables_or_publish_production():
     assert events[0] == 'storage' and 'compute' in events
 
 
-def test_only_current_receipt_at_control_root_can_resume():
+def test_only_compatible_v2_receipt_can_resume_without_writes():
     api = client()
     paths = []
-    api._workspace_json = lambda workspace, path, message: paths.append(path) or saved()
+    api._workspace_json = lambda workspace, path, message: paths.append(path) or (saved() if path.startswith(installer.CONTROL_ROOT + '/') else None)
     assert api._read_installation('workspace') == saved()
-    assert paths == [installer.CONTROL_ROOT + '/installer.json']
-    assert installer.CONTROL_ROOT != installer.ROOT
+    assert paths == [root + '/installer.json' for root in (installer.CONTROL_ROOT, installer.LEGACY_CONTROL_ROOT)]
+    assert installer.CONTROL_ROOT.startswith(installer.ROOT + '/')
     for change in ({'installer_version':1}, {'runtime_version':'v2'},
                    {'publication_root':'/Workspace/.control/modules/ai_market_intelligence_v2_installed'},
                    {'workspace':'other'}, {'mode':'install'}, {'mode':'reinstall'},
                    {'previous_operation_id':None}, {'previous_operation_id':OP}):
         rejected = {**saved(), **change}
         before = copy.deepcopy(rejected)
-        api._workspace_json = lambda *args: rejected
+        api._workspace_json = lambda workspace, path, message: rejected if path.startswith(installer.CONTROL_ROOT + '/') else None
         api._save = lambda *args: pytest.fail('Unsupported receipt must not be modified')
         with pytest.raises(AidpProvisionConflict, match='incompatible'):
             api._read_installation('workspace')
         assert rejected == before
+
+
+@pytest.mark.parametrize('root', [installer.CONTROL_ROOT, installer.LEGACY_CONTROL_ROOT])
+def test_receipt_round_trip_preserves_its_root_and_installation_identity(root):
+    api = client()
+    record = saved('ready', agent_key='agent', agent_compute_key='compute')
+    objects = {root + '/installer.json': copy.deepcopy(record)}
+    api._workspace_json = lambda workspace, path, message: copy.deepcopy(objects.get(path))
+    uploads = []
+    api._upload_file = lambda workspace, path, raw: uploads.append(path) or objects.update({path: json.loads(raw)})
+    actual = api._read_installation('workspace')
+    assert actual == record and not uploads
+    assert api.control_root == root
+    current.MarketAidpClient._save(api, actual)
+    assert uploads == [root + '/installer.json']
+    assert api._read_installation('workspace') == actual
+    assert {k: actual[k] for k in record} == record
+
+
+def test_two_receipts_block_resume_even_when_they_are_identical():
+    api = client()
+    api._workspace_json = lambda *args: saved()
+    api._upload_file = lambda *args: pytest.fail('Conflicting receipts must be preserved')
+    with pytest.raises(AidpProvisionConflict, match='both'):
+        api._read_installation('workspace')
+
+
+def test_invalid_legacy_receipt_is_not_treated_as_a_new_installation():
+    api = client()
+    api._workspace_json = lambda workspace, path, message: {'installer_version': 1} if path.startswith(installer.LEGACY_CONTROL_ROOT + '/') else None
+    with pytest.raises(AidpProvisionConflict, match='incompatible'):
+        api._read_installation('workspace')
+
+
+def test_new_installation_creates_workspace_folders_only_under_artifact():
+    api = client()
+    api._read_installation = lambda workspace: None
+    folders = []
+    api._ensure_workspace_layout = lambda workspace, paths: folders.extend(paths)
+    api._step = lambda *args: 'credentials'
+    api._advance('owner', OP, True, None, None)
+    assert folders and installer.CONTROL_ROOT in folders
+    assert all(path == '/Workspace/.artifact' or path.startswith('/Workspace/.artifact/') for path in folders)
 
 
 
@@ -113,7 +156,10 @@ def test_files_resume_owned_partial_upload_without_changing_dependencies():
     assert len(record['resources']['source_sha256']) == 64
     from ai_market_intelligence.installation.agent_package import authoring_files
     for name, raw in authoring_files().items():
-        assert objects[installer.AGENT_ROOT + '/' + name] == raw
+        if name != 'core/runtime.json':
+            assert objects[installer.AGENT_ROOT + '/' + name] == raw
+        else:
+            assert json.loads(objects[installer.AGENT_ROOT + '/' + name]) == api._runtime_config(record)
 
 
 def test_uncertain_agent_creation_is_not_repeated():
@@ -146,6 +192,7 @@ def probe_frame(result, *, role='assistant', status='completed', message_status=
     pytest.param({'status': 'in_progress'}, id='truncated'),
     pytest.param({'status': 'FAILED'}, id='error'),
     pytest.param({'updates': {'versions': {'python': '3.11.13', 'packages': {}}}}, id='package'),
+    pytest.param({'updates': {'versions': {'python': '3.11.13', 'packages': {name: '1.2.4' for name in current.RUNTIME_DISTRIBUTIONS}}}}, id='unsupported_langgraph'),
     pytest.param({'updates': {'model_calls': 1}}, id='effect'),
     pytest.param({'message_status': 'FAILED'}, id='message_failed'),
     pytest.param({'message_status': 'CANCELLED'}, id='message_cancelled'),
@@ -159,7 +206,7 @@ def test_probe_requires_current_source_authenticated_session_and_no_effects(faul
     result = {'mode': 'market_runtime_probe', 'schema_version': 1, 'source_sha256': 'a' * 64,
         'research_enabled': False, 'business_tables_required': False, 'authenticated_session_bound': True,
         'model_calls': 0, 'apify_starts': 0,
-        'versions': {'python': '3.11.13', 'packages': {name: 'observed' for name in current.RUNTIME_DISTRIBUTIONS}}}
+        'versions': {'python': '3.11.13', 'packages': {name: current.TARGET_GRAPH_PACKAGES.get(name, 'observed') for name in current.RUNTIME_DISTRIBUTIONS}}}
     result.update(fault.get('updates', {}))
     raw = probe_frame(result, role=fault.get('role', 'assistant'), status=fault.get('status', 'completed'),
                       message_status=fault.get('message_status', 'completed'))
@@ -188,7 +235,7 @@ def test_probe_requires_current_source_authenticated_session_and_no_effects(faul
 
 def test_market_package_keeps_its_declared_dependencies_separate_from_legacy():
     _, files = agent_package({'schema_version': 1, 'research_enabled': False})
-    assert files == {'requirements.txt': b'httpx==0.28.1\npypdf==6.20.1\n'}
+    assert files['requirements.txt'] == b'httpx==0.28.1\npypdf==6.20.1\n'
 
 
 def test_submitted_frozen_package_can_finish_after_backend_changes_without_rebinding(monkeypatch):
@@ -199,6 +246,7 @@ def test_submitted_frozen_package_can_finish_after_backend_changes_without_rebin
               [('market_intelligence.py', source), ('requirements.txt', dependency)]}
     digest = hashlib.sha256(json.dumps(hashes, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     record = saved('test', source_sha256=hashes['market_intelligence.py'], test_intent={'package_sha256': digest})
+    record.pop('layout_version')  # Historical submitted standalone candidate.
     record['pack_sha256'] = '0' * 64
     api._workspace_json = lambda *a: api._descriptor(record)
     objects = {'market_intelligence.py': source, 'requirements.txt': dependency}
@@ -333,6 +381,8 @@ def test_market_initial_test_uses_verified_native_init_contract(monkeypatch):
         _request=lambda *a: {'type': 'CODE', 'computeKey': 'compute', 'pathInfo': root,
             'entryFilePath': root + '/market_intelligence.py', 'dependenciesFilePath': root + '/requirements.txt'},
         _workspace_object=lambda *a, **k: (b'content', {}), _content_matches=lambda *a: True,
+        _list=lambda *a, **k: [{'path': root + '/' + name, 'type': 'FILE'}
+                              for name in ('agent-manifest.json', 'market_intelligence.py', 'requirements.txt')],
         session=SimpleNamespace(close=lambda: None))
     monkeypatch.setattr('ai_market_intelligence.installation.playground.AidpClient', lambda settings: ga)
     native = MarketPlaygroundClient.__new__(MarketPlaygroundClient)

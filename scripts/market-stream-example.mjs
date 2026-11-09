@@ -9,7 +9,7 @@ export class ReplayRequired extends Error {
 export function createMarketView(requestId) {
   if (typeof requestId !== 'string' || !requestId || requestId.length > 128) throw new TypeError('Invalid request identity');
   return { requestId, cursor: 0, blocks: new Map(), artifacts: new Map(), references: new Map(),
-    events: new Map(), response: null, final: null };
+    events: new Map(), activity: new Map(), response: null, final: null };
 }
 
 function canonical(value) {
@@ -57,6 +57,17 @@ function manifests(view, references = [], artifacts = []) {
   for (const artifact of artifacts) view.artifacts.set(artifact.artifact_id, artifact);
 }
 
+const sources = new Set(['web', 'x', 'facebook', 'instagram', 'youtube', 'market_data', 'world_bank', 'financial_document']);
+const roles = new Set(['coordinator', 'market_analysis', 'financial_analysis', 'analysis_visualization']);
+
+function activity(view, item) {
+  if (item.type !== 'source.coverage' || !item.coverage?.phase) return;
+  if (!sources.has(item.source_key) || !roles.has(item.role_key) || item.coverage?.source !== item.source_key
+      || !Array.isArray(item.source_keys) || item.source_keys.length !== 1 || item.source_keys[0] !== item.source_key)
+    throw new TypeError('Invalid source activity attribution');
+  view.activity.set(item.source_key, item);
+}
+
 function event(view, item) {
   if (item.turn_id !== view.requestId || !Number.isSafeInteger(item.sequence) || item.sequence < 1)
     throw new TypeError('Event belongs to another request or has an invalid sequence');
@@ -69,6 +80,7 @@ function event(view, item) {
   if (item.sequence !== view.cursor + 1) throw new ReplayRequired(view.cursor);
   view.events.set(item.event_id, identity);
   view.cursor = item.sequence;
+  activity(view, item);
   if (item.block_id) view.blocks.set(item.block_id, item);
   return true;
 }
@@ -89,6 +101,7 @@ function snapshot(view, packet) {
   if (replay.snapshot) {
     view.blocks = new Map();
     view.artifacts = new Map();
+    view.activity = new Map();
     for (const block of Object.values(replay.snapshot.blocks)) {
       if (block.turn_id !== view.requestId) throw new TypeError('Foreign replay block');
       const prior = view.events.get(block.event_id);
@@ -97,6 +110,15 @@ function snapshot(view, packet) {
       view.blocks.set(block.block_id, block);
     }
     manifests(view, [], Object.values(replay.snapshot.artifacts));
+    for (const item of Object.values(replay.snapshot.activity ?? {})) {
+      if (item.turn_id !== view.requestId || !Number.isSafeInteger(item.sequence)
+          || item.sequence < 1 || item.sequence > replay.cursor || item.type !== 'source.coverage')
+        throw new TypeError('Invalid replay activity');
+      const prior = view.events.get(item.event_id);
+      if (prior !== undefined && prior !== canonical(item)) throw new TypeError('An immutable event changed');
+      view.events.set(item.event_id, canonical(item));
+      activity(view, item);
+    }
     view.cursor = replay.cursor;
   } else {
     for (const item of replay.events) event(view, item);
@@ -121,7 +143,7 @@ export function reduceMarketPacket(current, incoming) {
   const turn = packet.kind === 'event' ? packet.event?.turn_id : packet.request_id;
   if (turn !== current.requestId) throw new TypeError('Packet belongs to another request');
   const view = { ...current, blocks: new Map(current.blocks), artifacts: new Map(current.artifacts),
-    references: new Map(current.references), events: new Map(current.events) };
+    references: new Map(current.references), events: new Map(current.events), activity: new Map(current.activity) };
   const handlers = {
     heartbeat: () => {},
     event: () => { if (event(view, packet.event)) manifests(view, packet.references, packet.artifacts); },
@@ -133,4 +155,36 @@ export function reduceMarketPacket(current, incoming) {
   if (view.final) view.artifacts = new Map(view.final.artifacts.map(artifact => [artifact.artifact_id, artifact]));
   hideWithdrawnArtifacts(view);
   return view;
+}
+
+export async function* readMarketPackets(readable) {
+  const reader = readable.getReader();
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  const encoder = new TextEncoder();
+  const maximum = 2 * 1024 * 1024;
+  let buffer = '';
+  let done = false;
+  try {
+    while (!done) {
+      const chunk = await reader.read();
+      done = chunk.done;
+      buffer += done ? decoder.decode() : decoder.decode(chunk.value, { stream: true });
+      let newline;
+      while ((newline = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        if (!line.trim()) continue;
+        if (encoder.encode(line).byteLength > maximum) throw new TypeError('Public packet exceeds its size bound');
+        const packet = JSON.parse(line);
+        if (packet?.protocol !== 'ai-market-intelligence' || packet.version !== '2.0'
+            || !['event', 'response', 'snapshot', 'heartbeat'].includes(packet.kind))
+          throw new TypeError('Expected a normalized public packet');
+        yield packet;
+      }
+      if (encoder.encode(buffer).byteLength > maximum) throw new TypeError('Incomplete packet exceeds its size bound');
+    }
+    if (buffer.trim()) throw new TypeError('Stream ended inside a public packet');
+  } finally {
+    try { if (!done) await reader.cancel(); } finally { reader.releaseLock(); }
+  }
 }

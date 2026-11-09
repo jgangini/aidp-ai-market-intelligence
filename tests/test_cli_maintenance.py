@@ -47,6 +47,25 @@ def test_mutation_requires_apply_before_reading_any_files(action):
     assert error.value.code == 2
 
 
+def test_preserving_production_requires_the_explicit_plugin_driver():
+    with pytest.raises(SystemExit) as error:
+        cli.main(['update','--preserve-prod','--apply','--settings','missing'])
+    assert error.value.code==2
+
+
+def test_cli_routes_explicit_snapshot_preservation_to_the_selected_plugin(command,monkeypatch,tmp_path):
+    from ai_market_intelligence.installation import plugin_test
+    driver=Mock()
+    monkeypatch.setattr(plugin_test,'PluginTestDeployment',driver)
+    assert cli.main(['update',*command.base,'--apply','--preserve-prod',
+                     '--project',str(tmp_path),'--plugin-scripts',str(tmp_path/'plugin')])==0
+    call=command.maintain.call_args
+    assert call.kwargs['preserve_production'] is True
+    call.kwargs['native_factory']('selected-settings')
+    driver.assert_called_once_with('selected-settings',project=tmp_path,
+        plugin_scripts=tmp_path/'plugin',operation_id=OP)
+
+
 @pytest.mark.parametrize('action', ['update','redeploy','rollback'])
 def test_exact_operation_and_session_reach_maintenance_after_read_admission(command,capsys,action):
     assert cli.main([action,*command.base,'--test-session-id',SESSION,'--apply']) == 0
@@ -92,6 +111,45 @@ def test_rollback_status_is_returned_truthfully(command,capsys):
     command.maintain.return_value.update(status='rolled_back',action='rollback')
     assert cli.main(['rollback',*command.base,'--apply']) == 0
     assert json.loads(capsys.readouterr().out)['status']=='rolled_back'
+
+
+@pytest.mark.parametrize('pending_phase', [None, 'test', 'rebuild'])
+def test_rebuild_exhausted_wait_is_not_reported_as_completed(command, monkeypatch, tmp_path, capsys, pending_phase):
+    from ai_market_intelligence import rebuild
+    from ai_market_intelligence.errors import AidpProvisionPending
+    plugin = tmp_path / 'plugin'
+    (plugin / 'aidp_agent_flow').mkdir(parents=True)
+    (plugin / 'aidp_agent_flow/native_layout.py').touch()
+    prepare = Mock(return_value=('previous', 'current'))
+    advance = Mock(side_effect=AidpProvisionPending('Still waiting', pending_phase) if pending_phase else None,
+                   return_value={'status': 'running', 'phase': 'test_wait'})
+    monkeypatch.setattr(rebuild, 'prepare', prepare)
+    monkeypatch.setattr(rebuild, 'advance', advance)
+    monkeypatch.setattr(cli.time, 'sleep', lambda _: None)
+    code = cli.main(['rebuild-development', *command.base, '--plugin-scripts', str(plugin), '--apply'])
+    assert code == 2
+    assert json.loads(capsys.readouterr().out)['status'] == ('pending' if pending_phase else 'running')
+    assert advance.call_count == 120
+    assert all(call.args == (command.native, 'previous', 'current', OP) for call in advance.call_args_list)
+    assert command.closed == [True]
+
+
+@pytest.mark.parametrize('apply', [False, True])
+def test_rebuild_completed_or_read_only_plan_returns_success(command, monkeypatch, tmp_path, capsys, apply):
+    from ai_market_intelligence import rebuild
+    plugin = tmp_path / 'plugin'
+    (plugin / 'aidp_agent_flow').mkdir(parents=True)
+    (plugin / 'aidp_agent_flow/native_layout.py').touch()
+    result = {'status': 'completed'} if apply else {'applied': False, 'action': 'rebuild-development'}
+    advance = Mock(return_value=result)
+    monkeypatch.setattr(rebuild, 'prepare', Mock(return_value=('previous', 'current')))
+    monkeypatch.setattr(rebuild, 'advance', advance)
+    code = cli.main(['rebuild-development', *command.base, '--plugin-scripts', str(plugin),
+                     *(['--apply'] if apply else [])])
+    assert code == 0
+    assert json.loads(capsys.readouterr().out) == result
+    advance.assert_called_once_with(command.native, 'previous', 'current', OP, apply=apply)
+    assert command.closed == [True]
 
 
 def test_maintenance_exception_is_redacted_and_client_closed(command,capsys):

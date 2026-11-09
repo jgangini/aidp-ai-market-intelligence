@@ -24,7 +24,7 @@ OP = '00000000-0000-4000-8000-000000000001'
 ENDPOINT = 'https://gateway.aidp.us-chicago-1.oci.oraclecloud.com/agent'
 
 def state(phase='verify', **resources):
-    return {'installer_version': 2, 'publication_root': installer.ROOT, 'module_id': installer.MODULE_ID, 'workspace': 'workspace',
+    return {'installer_version': 2, 'layout_version': 2, 'publication_root': installer.ROOT, 'module_id': installer.MODULE_ID, 'workspace': 'workspace',
             'operation_id': OP, 'owner': 'owner', 'reuse_existing': True, 'phase': phase,
             'status': 'installing', 'resources': resources,
             'pack_sha256': installer.load_package(installer.MODULE_ID, require_available=False).pack_sha256}
@@ -39,7 +39,7 @@ def client():
 def test_receipt_survives_native_json_readback_and_resume_without_format_drift():
     api = client()
     stored, writes = {}, []
-    api._workspace_object = lambda *a, **k: (stored.get('body'), {'type': 'FILE'} if stored else {})
+    api._workspace_object = lambda workspace, path, **k: (stored.get('body'), {'type': 'FILE'} if stored else {}) if path == installer.CONTROL_ROOT + '/installer.json' else (None, {})
     def request(method, path, **kwargs):
         assert method == 'POST' and path == '/workspaces/workspace/objects'
         assert kwargs['headers']['path'] == installer.CONTROL_ROOT + '/installer.json'

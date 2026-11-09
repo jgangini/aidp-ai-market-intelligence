@@ -2,7 +2,7 @@
   "schema_version": 1,
   "lab_id": "ai_market_intelligence",
   "display_name": "AI Market Intelligence",
-  "pack_version": "2.0.1",
+  "pack_version": "2.1.0",
   "status": "planned",
   "kind": "global_module",
   "scope": "global",
@@ -31,7 +31,7 @@
     "card": {
       "name": "ai_market_intelligence",
       "description": "On-demand evidence-based market research with authenticated AIDP sessions and conditional Object Storage ledgers. The installed agent stays paused on TEST until native acceptance; no automatic scheduled dispatch or visual charts are enabled.",
-      "version": "2.0.1",
+      "version": "2.1.0",
       "capabilities": {
         "isStreaming": true
       },
@@ -80,199 +80,187 @@
   },
   "runtime_files": [
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/__init__.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/__init__.py",
-      "sha256": "2995e39ecee9060a2d4000c26b4e164bb3adc116298e48f0dc74e980ca2142c8"
+      "file": "aidp/workspaces/default/files/agents/core/__init__.py",
+      "sha256": "ee9007280cae8826e7baeb0d48fe5c439adfe935e62d84208900ecc6fa059e59"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/actor_profiles.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/actor_profiles.py",
-      "sha256": "9dcd8d381162f5108495bf2cd3b39fd09e576294f0175a463947bc57e36ba009"
+      "file": "aidp/workspaces/default/files/agents/core/actor_profiles.py",
+      "sha256": "a6f5cddaee528a24644f874f624c1490d91a06e9b68aa8fb5cec5c63c27cfee9"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/actor_tools.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/actor_tools.py",
-      "sha256": "a42caa9f2aacaf19c75796d4cfcf8732efda1cb263436cb86cb39e4b786b0c49"
+      "file": "aidp/workspaces/default/files/agents/core/actor_tools.py",
+      "sha256": "f1d56608e17ae8685096eb6c886524b40bd2daf53780fe2fc6b087ce02b77ed3"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/artifacts.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/artifacts.py",
-      "sha256": "166acacaff3ad6485d54ca9995236b5e02cf33531fadc3f48f7a0c5e63def153"
+      "file": "aidp/workspaces/default/files/agents/core/artifacts.py",
+      "sha256": "707c818e9d33182477ba18be28879e091da8340d49246fba8473f6c6dc7fca74"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/collector.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/collector.py",
-      "sha256": "b2c88403356d2e985c71a9ebee1d8cd0c96fdaaaacef9c68cc1c69ae544a9784"
+      "file": "aidp/workspaces/default/files/agents/core/collector.py",
+      "sha256": "e8d0d062f084f0f21245c37c5c19ae15173233600f1e943518870bd43a98bcc7"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/config.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/config.py",
-      "sha256": "5b00b44869af9c08ae29f9813f7460db96a7866b8acc6d95b136a8095da91180"
+      "file": "aidp/workspaces/default/files/agents/core/config.py",
+      "sha256": "a94c50c3f2bd3be62e089eaaa286da4cbe3f3a98a8cc0a012d71751d6f195e80"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/connectors.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/connectors.py",
-      "sha256": "9013574dc5fd5186eb0389d104e60c9d6525a2fe36523ebbda050e6488d273bc"
+      "file": "aidp/workspaces/default/files/agents/core/connectors.py",
+      "sha256": "8427a357da4259178af306e56e569a0bc7042fcaaf29543ae0c0d531ed692c96"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/contracts.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/contracts.py",
-      "sha256": "4a3c580fb36cbf0b4965a649d771888a62b089c84d4366f9b2367d8317d6ac6d"
+      "file": "aidp/workspaces/default/files/agents/core/contracts.py",
+      "sha256": "eca35503d5769dc39092720acf4cbb2818673a348a70c1894a08b49d770ace8a"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/documents.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/documents.py",
-      "sha256": "c0ed7142183a0b5d6f6b80f18dd67095545b096c8e70af54bb244654b743172a"
+      "file": "aidp/workspaces/default/files/agents/core/decisions/__init__.py",
+      "sha256": "80e3f684c853b200d6cb6455f1cbef24bda47ecaf5dd99bab9acee383e380e38"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/effects.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/effects.py",
-      "sha256": "86664e6a1f77ce489480052d31c776f960137fd3dfcdae0244eff98d7ae9a0ec"
+      "file": "aidp/workspaces/default/files/agents/core/decisions/report.py",
+      "sha256": "1d0d8b7be6bd139197e8a5a15bc501cecb3c17157b0441380d37926b3875c478"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/factory.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/factory.py",
-      "sha256": "486fae56b8a1edaa6d83c2b0e9d1b9c51dea4297d2effed23d1299d66bf3e83c"
+      "file": "aidp/workspaces/default/files/agents/core/decisions/research.py",
+      "sha256": "18e086cacffe7514a205c328bb245a974ebaab6ff133fe7fefb9ccecaedfe170"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/finance.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/finance.py",
-      "sha256": "70de0344380bbfb14df3e07b7373c2fdea2028b581d702b537b3b8490ed119e0"
+      "file": "aidp/workspaces/default/files/agents/core/decisions/understand.py",
+      "sha256": "4f809e151219d50939533a526dce9aef25dac5ff6ab5f0432db5c460fd1abf18"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/financial.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/financial.py",
-      "sha256": "7f8ca44bbe72ec8774e301d0438480ac03ff383052dca6080858b01530c48004"
+      "file": "aidp/workspaces/default/files/agents/core/decisions/verify.py",
+      "sha256": "2b825af2f8d0177ec0bbfff65d6ca07cb5bf342bd5b388d984fa8b546773a546"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/mcp_payload.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/mcp_payload.py",
-      "sha256": "c95437f67a296bf27f2da9e88f7f01d3a68e320f97c0ce794fa66c3a1d37523e"
+      "file": "aidp/workspaces/default/files/agents/core/documents.py",
+      "sha256": "b51f06eec83bd2b8365ada81bfd5a49118b41497a1fa35722647c65306194a3b"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/mcp_tools.json",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/mcp_tools.json",
+      "file": "aidp/workspaces/default/files/agents/core/effects.py",
+      "sha256": "8f505c7fe886e00d6904209e1d52ecad5c76e411147fcdabbbb29d3744153c41"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/factory.py",
+      "sha256": "fa6cb1790dce696083994c133c202df4a5fcdf3b972ed8604a3228a0ebe5d206"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/finance.py",
+      "sha256": "6e5f231b4b63055de126015572b714313b7443b268fdfd2edea371df94ea3e40"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/financial.py",
+      "sha256": "c9de069db281d25cf2329ad2758c1b185400ad48d423f458b62351b8da6ecdb0"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/mcp_payload.py",
+      "sha256": "79d8db532fc61f50d9d1eead9cbc2f33f61428a19087487ee314a88e32ae6116"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/mcp_tools.json",
       "sha256": "4ca3419dc96b7177e3d07099139e74f85a1264bec464e61d7633e3e0fb49a8a1"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/media.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/media.py",
-      "sha256": "595f1b8faabd97d248eb501ba93bd0ed700a419afe131c6c1445f8149982c54a"
+      "file": "aidp/workspaces/default/files/agents/core/media.py",
+      "sha256": "da5f64f58dd0f091ea49948c64d7c9c0c0631ff597ebcc2c4b6bb38e385561e8"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/memory.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/memory.py",
-      "sha256": "42320c682c93170440960311fe004c5702d38278afc56ce65acff523eaad1160"
+      "file": "aidp/workspaces/default/files/agents/core/memory.py",
+      "sha256": "c8c4ba3a2d6ad0efa23088a7a261090ee652ba18250dda1123dbb7f615671e98"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/model.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/model.py",
-      "sha256": "674206ec4db84f8c8db7d74d8bf12a0e71422d1485ba4bd8261e0bdeb2420e8e"
+      "file": "aidp/workspaces/default/files/agents/core/model.py",
+      "sha256": "ed9c27f31e31f0ea6a7d7ac2c9e437641e89324aff0b8abadd26cfca407c5d6f"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/model_bridge.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/model_bridge.py",
-      "sha256": "1cde0fbb1d602cefcfb462e38fbdbafdcbacc0ef1ca36cabb8d83754d2f0d7a4"
+      "file": "aidp/workspaces/default/files/agents/core/model_bridge.py",
+      "sha256": "02ab1a8b8c65ad95cfa9f4ada205a9bf08378689911453414b35e51b7d8918c1"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/native.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/native.py",
-      "sha256": "ad1dc8575077711480d8e5b8b8762a5c792e93185090242cff6dda5b94d7df87"
+      "file": "aidp/workspaces/default/files/agents/core/native.py",
+      "sha256": "c6c0e9c8a63fbbc3c4e599607c0c033a86071240eef2eb42b61b61ed431f41de"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/passages.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/passages.py",
-      "sha256": "836eb40ff11ad7b7f7d3a1828236b264236f1bdc3e6d0c7a29aa763c56e3a9c2"
+      "file": "aidp/workspaces/default/files/agents/core/package_identity.py",
+      "sha256": "1d3c8d4fcb2cbac2ae879f18eedf205da7ff328f52e35538c981705d12ced28f"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/prompts.json",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/prompts.json",
-      "sha256": "960826b000e270731077ff43efed00909694d66fd3707b113dc3e538bb997825"
+      "file": "aidp/workspaces/default/files/agents/core/passages.py",
+      "sha256": "0bee7a3e7abda05e20310963866ce0787928e6bc9670b0e5c51ed3fe76aeec9c"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/provider.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/provider.py",
-      "sha256": "86bc7479731e3381648ce6f1bf32c3922b3f0f624a3bfa138ffa9d56145b3fb2"
+      "file": "aidp/workspaces/default/files/agents/core/provider.py",
+      "sha256": "916ec6ad7afe9b70efdce61b2e9a4c88547e9bfdda7cbc1059743e2da09daeac"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/research_contracts.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/research_contracts.py",
-      "sha256": "7388a9371dc05e13830863063f851f8e3b7d18a3272ef209a22f9fe0c71336b5"
+      "file": "aidp/workspaces/default/files/agents/core/research_contracts.py",
+      "sha256": "26e9aa84c9d29a5dd721090469892993d6c8572a0950349d28af22943d1b8981"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/runtime_core.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/runtime_core.py",
-      "sha256": "9bab9b9c9ddbf9e60f369e536409d0c20c645e229b83e10d8e82a49bf6201e7a"
+      "file": "aidp/workspaces/default/files/agents/core/runtime.json",
+      "sha256": "5bac87d0ffcb56319f3ed8ce764dc9b03c07c195807794e306291a3bca760282"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/runtime_versions.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/runtime_versions.py",
-      "sha256": "3f12137b7cfecaca55e1d3b2d1d9ae19d3af1010becd5542bf26654bf0bed4a1"
+      "file": "aidp/workspaces/default/files/agents/core/runtime_core.py",
+      "sha256": "3019051e063df5558e575d19fc34a7d998999493ea8bdd663a07403a03231279"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/serp.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/serp.py",
-      "sha256": "5fe46025945b86c4734454635d9483e2764ebc683b04f504dd04ac85e9982ede"
+      "file": "aidp/workspaces/default/files/agents/core/runtime_versions.py",
+      "sha256": "7b6b8eedc1bf3eedb4266d3a2fe8cdb811cb0b2a986e3e500add7ad0ee86d0ba"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/services.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/services.py",
-      "sha256": "5b90585567d5ddf655b6384c93d7503d5fdec40c4ef96e655342608df8fa2217"
+      "file": "aidp/workspaces/default/files/agents/core/serp.py",
+      "sha256": "4aa2c11e937d153544da2e9a787b49668a8f1a8db2d4e7f148f8cd206d04d1dd"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/session.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/session.py",
-      "sha256": "8895430639c1f1e17f6924eeb9a90a6a7a1028c3becafd952df86d7bae1c0ec5"
+      "file": "aidp/workspaces/default/files/agents/core/services.py",
+      "sha256": "ca120bd607003ba551ce76bb58f6fc872321ec1b9532d73022957c40a65e3246"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/social.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/social.py",
-      "sha256": "02aaeb598fd2c022fc1e5ba1dcc3c1759bf41e97e40b1fe41b5ce4517b833c42"
+      "file": "aidp/workspaces/default/files/agents/core/session.py",
+      "sha256": "812ed8e4da967583e6f322fdc6b84439e840bcd2f2f7923b24638a79543834f5"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/social_search.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/social_search.py",
-      "sha256": "ee3efbf971852baac7eb8a291642fcb30e1c51ca29a4cb35cc0b6cc04437733b"
+      "file": "aidp/workspaces/default/files/agents/core/social.py",
+      "sha256": "62331b8a334c89178f9dd51e11cb4bde81ff9289252c290dcb373369414b2627"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/state.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/state.py",
-      "sha256": "ec8f069ed196f77ee9ec9bb79b7fe74fb8c864994372c913d7dec47d0e92e72c"
+      "file": "aidp/workspaces/default/files/agents/core/social_search.py",
+      "sha256": "219daa5fcbb87e45381b822a3d28e2d0b66bab044b9ab0725472ce63ea5d68c6"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/wire.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/wire.py",
-      "sha256": "303983b687b0e34ba89ed65cd6bc4e34813518b606ad30ec6fb00c04fd786457"
+      "file": "aidp/workspaces/default/files/agents/core/state.py",
+      "sha256": "7ab740d2d9c90ecd17668febd620271ab8191e57947ae2eba5bfd9d9c5f3383b"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/ai_market_intelligence/workflow.py",
-      "workspace_path": "agents/ai_market_intelligence/ai_market_intelligence/workflow.py",
-      "sha256": "613adbbf817f5e65980935d62a5364418e9cbaeb7004c65d14a228ea6ad4e2d8"
+      "file": "aidp/workspaces/default/files/agents/core/wire.py",
+      "sha256": "cb1f49491a4eaf996a67d212322d8aae5b06f86a8959387b2a7b5956f00fec8b"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/market_intelligence.py",
-      "workspace_path": "agents/ai_market_intelligence/market_intelligence.py",
-      "sha256": "1e896e6d65f92e72dc032c5a2c657f1946ebc02cc5cd6fdcf1c4e823a042e5e7"
+      "file": "aidp/workspaces/default/files/agents/core/workflow.py",
+      "sha256": "33f37382a5825ef18202a38b4975d73f214bab6370b8b0d57ffdaddc0ad547a1"
     },
     {
-      "file": "aidp/workspaces/default/files/agents/ai_market_intelligence/requirements.txt",
-      "workspace_path": "agents/ai_market_intelligence/requirements.txt",
+      "file": "aidp/workspaces/default/files/agents/market_intelligence.py",
+      "sha256": "7915e5da99e3cbf815fc17c9f9656ff862d8086d07e31eb0f57975f65980a42b"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/requirements.txt",
       "sha256": "aacf9df1666b26c2c9878e56d25d131c34703dea587e9da98d4d8991b5b87560"
     }
   ],
   "source_manifests": [
     {
       "file": "aidp/manifest.json",
-      "sha256": "2f5efa1c496e576fa91bf038e603c8a2eacacf26caf42a7b13b454f10473f9a4"
+      "sha256": "2a3becc4c7c17b2add441ac61d56d04ed1e663978e0f4839cf387aee708165e8"
     },
     {
       "file": "aidp/workspaces/default/agent_flow/agents/ai_market_intelligence.json",
-      "sha256": "1ab227a24dc811c11eaa6f80183226cb7dfd35f374369e3b5af6981eb5953262"
+      "sha256": "dd1d68e0a5d13b5de98ba26f2055b5400c55b77277b7566e709f6dc9d9339735"
     },
     {
       "file": "aidp/workspaces/default/agent_flow/compute/ai_market_intelligence.json",
       "sha256": "02d8ebfd9f19dd08b7c1b47e22137899f29fc525e208cdb88c285492e21ad477"
     }
   ],
-  "pack_sha256": "83b6f4475272b7350de676344f553ff42b925080303dac9979949f01ed2cbcd1"
+  "pack_sha256": "a54f8304ff18a8f146c7183ebecce396c2ec3024f16d1e9e589920d941a597ff"
 }

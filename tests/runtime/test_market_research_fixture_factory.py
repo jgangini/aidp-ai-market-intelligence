@@ -30,7 +30,7 @@ def fixture_runtime(monkeypatch,responses):
     ('research','needs_clarification'),('reuse_report','needs_clarification'),('schedule_proposal','partial'),
 ])
 def test_fixture_factory_consumes_recorded_completion_and_supplied_checkpoint(monkeypatch,intent,expected):
-    brief={'intent':intent,'entity':'Fixture','market':'Colombia','objective':'Inspect the fixture',
+    brief={'intent':intent,'entity':'Fixture','market':'Colombia','objective':'Inspect the fixture','period_is_explicit':False,
         'start':None,'end':None,'sources':[],'clarification':'Specify the source' if intent=='research' else None,
         'assumptions':[]}
     responses=[json.dumps(brief)]

@@ -20,12 +20,12 @@ class NativeTransportSettings:
     aidp_platform_id: str
 
 
-REMOTE_ROOT='/Workspace/.artifact/ai_market_intelligence/agents/ai_market_intelligence'
+REMOTE_ROOT='/Workspace/.artifact/ai_market_intelligence/agents'
 
 
 def prepare_market(root,config_path,output):
     from ai_market_intelligence.package import load_package
-    from ai_market_intelligence.installation.agent_package import agent_package, authoring_files
+    from ai_market_intelligence.installation.agent_package import agent_package
     from ai_market_intelligence.runtime.runtime_versions import exact_runtime_comparison, runtime_versions
     config=json.loads(config_path.read_text(encoding='utf-8'))
     pack=load_package('ai_market_intelligence',require_available=False)
@@ -36,13 +36,14 @@ def prepare_market(root,config_path,output):
         profile=services['runtime_profile']
         if not exact_runtime_comparison(runtime_versions(tuple(profile['packages'])),profile)['exact_match']:
             raise ValueError('Prepare the package using the exactly aligned current environment')
+    from ai_market_intelligence.runtime.package_identity import source_identity
     source,assets=agent_package(config)
     destination=market_project_path(root,output)
     destination.mkdir(parents=True,exist_ok=True)
-    manifest={'schema_version':1,'candidate_revision':pack.pack_sha256,
-        'source_sha256':hashlib.sha256(source).hexdigest(),'business_tables_required':False,
+    manifest={'schema_version':2,'candidate_revision':pack.pack_sha256,
+        'source_sha256':source_identity({'market_intelligence.py':source,**assets}),'business_tables_required':False,
         'research_enabled':config['research_enabled']}
-    for name,raw in {'market_intelligence.py':source,**assets,**authoring_files()}.items():
+    for name,raw in {'market_intelligence.py':source,**assets}.items():
         (destination/name).parent.mkdir(parents=True,exist_ok=True)
         (destination/name).write_bytes(raw)
     (destination/'agent-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')
@@ -56,7 +57,8 @@ def verify_market_target(root,config,*,candidate_required):
         return
     source=market_project_path(root,config['agent']['entry'])
     manifest=json.loads(source.with_name('agent-manifest.json').read_text(encoding='utf-8'))
-    if manifest.get('schema_version')!=1 or hashlib.sha256(source.read_bytes()).hexdigest()!=manifest.get('source_sha256'):
+    from ai_market_intelligence.runtime.package_identity import directory_identity
+    if manifest.get('schema_version')!=2 or directory_identity(source.parent)!=manifest.get('source_sha256'):
         raise ValueError('The selected source is not its declared current candidate')
 
 

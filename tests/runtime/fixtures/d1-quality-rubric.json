@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "requirements_ref": "docs/quality.md",
+  "case_id": "d1-captured-research",
+  "review_scope": "Content and trajectory review against the sealed capture; not supplied to generation",
+  "reviewer": "Codex review separate from the configured OCI generator; no independently calibrated human judge",
+  "criteria": [
+    {"id": "scope_faithful", "required": true, "description": "Objective describes the user's question without adding requirements about corporate ownership, manufacturers, prices or service that were not requested."},
+    {"id": "grounded", "required": true, "description": "Material claims are supported by their cited captured texts. Preserve attribution and qualifiers; do not turn a user's ownership claim or a suspected accident cause into a verified fact."},
+    {"id": "coverage_honest", "required": true, "description": "Disclose the requested period and X sample. Repeated reports of one incident do not demonstrate independent corroboration or national opinion; do not claim a new search during replay."},
+    {"id": "useful_proportionate", "required": true, "description": "Answer what is being said with the main pertinent topics. Omit unrelated homonyms and political name lists. Summarize repeated incident details rather than cataloguing each account; do not substitute a list of limitations for useful supported findings."},
+    {"id": "continuation_justified", "required": true, "description": "A refinement addresses an unresolved entity, absence of relevant evidence or an expressly requested missing condition. Unrequested business categories alone do not justify another search."}
+  ],
+  "mechanical_checks": ["delivered", "nonempty_text", "references_resolve_to_capture"],
+  "limitations": ["Five trials of one question do not establish general accuracy or native AIDP acceptance.", "Word counts and latency describe behavior, not factual correctness."]
+}

@@ -1,3 +1,4 @@
+from ai_market_intelligence.runtime.decisions.research import bind_queries
 import copy
 from pathlib import Path
 import json
@@ -7,6 +8,66 @@ import pytest
 
 from tests.runtime.test_market_intelligence_graph import market_fixture, market_run
 from ai_market_intelligence.runtime.workflow import MarketWorkflow
+
+
+@pytest.mark.parametrize('gap,expected_gap,expected_query',[
+    (None,None,None),
+    ({'description':'Falta el dato solicitado','refinement_query':None},'Falta el dato solicitado',None),
+    ({'description':'Falta el dato solicitado','refinement_query':{'groups':[['Fixture'],['dato']]}},
+     'Falta el dato solicitado','"Fixture" "dato"'),
+])
+def test_analysis_model_contract_keeps_each_search_inside_its_justification(gap,expected_gap,expected_query):
+    from jsonschema import Draft202012Validator
+    from ai_market_intelligence.runtime.decisions.research import configure_contract,normalize_result
+    from ai_market_intelligence.runtime.research_contracts import MarketAnalysis
+    payload={'task':{'source':'x'},'refinement_allowed':True}
+    contract=MarketAnalysis.model_json_schema()
+    configure_contract('market_analyze',contract,payload)
+    decision={'findings':[],'gap':gap}
+    Draft202012Validator(contract).validate(decision)
+    analysis=MarketAnalysis.model_validate(normalize_result('market_analyze',decision,payload))
+    assert (analysis.gap,analysis.refinement_query)==(expected_gap,expected_query)
+    assert decision=={'findings':[],'gap':gap}
+
+
+def test_analysis_contract_rejects_the_observed_unjustified_search_without_fabricating_a_gap():
+    from jsonschema import Draft202012Validator
+    from pydantic import ValidationError
+    from ai_market_intelligence.runtime.decisions.research import configure_contract,normalize_result
+    from ai_market_intelligence.runtime.research_contracts import MarketAnalysis
+    payload={'task':{'source':'x'},'refinement_allowed':True}
+    contract=MarketAnalysis.model_json_schema()
+    configure_contract('market_analyze',contract,payload)
+    observed={'findings':[],'gap':None,'refinement_query':{'groups':[['Fixture']]}}
+    assert list(Draft202012Validator(contract).iter_errors(observed))
+    with pytest.raises(ValidationError,match='concrete gap'):
+        MarketAnalysis.model_validate(normalize_result('market_analyze',observed,payload))
+
+
+@pytest.mark.parametrize('allowed',[False,True])
+def test_analysis_query_permission_is_enforced_before_compilation(allowed):
+    from jsonschema import Draft202012Validator
+    from ai_market_intelligence.runtime.decisions.research import configure_contract,normalize_result
+    from ai_market_intelligence.runtime.research_contracts import MarketAnalysis
+    payload={'task':{'source':'x'},'refinement_allowed':allowed}
+    contract=MarketAnalysis.model_json_schema()
+    configure_contract('market_analyze',contract,payload)
+    decision={'findings':[],'gap':{'description':'Falta contraste','refinement_query':{'groups':[['Fixture']]}}}
+    errors=list(Draft202012Validator(contract).iter_errors(decision))
+    assert bool(errors) is not allowed
+    if not allowed:
+        with pytest.raises(ValueError,match='does not allow'):
+            normalize_result('market_analyze',decision,payload)
+    else:
+        assert normalize_result('market_analyze',decision,payload)['gap']=='Falta contraste'
+
+
+def test_analysis_query_requires_its_own_nonempty_justification():
+    from ai_market_intelligence.runtime.decisions.research import normalize_result
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        normalize_result('market_analyze',{'findings':[],'gap':{'description':'','refinement_query':None}},
+                         {'task':{'source':'x'},'refinement_allowed':True})
 
 
 def test_model_supplies_keyword_concepts_and_backend_builds_source_specific_queries():
@@ -30,14 +91,14 @@ def test_model_supplies_keyword_concepts_and_backend_builds_source_specific_quer
 
 @pytest.mark.parametrize('source',['web','financial_document'])
 def test_documentary_keywords_keep_variants_without_forcing_exact_brand_spelling(source):
-    result=MarketWorkflow.bind_queries('market_plan',{'tasks':[{'source':source,
+    result=bind_queries('market_plan',{'tasks':[{'source':source,
         'query':{'groups':[['leche Lati','marca Lati'],['D1'],['fabricante','maquila']]}}]}, {})
     assert result['tasks'][0]['query']=='(leche Lati OR marca Lati) D1 (fabricante OR maquila)'
 
 
 @pytest.mark.parametrize('term',['OR','D1 OR Éxito','D1 -fabricante','D1 +fabricante','2020..2025'])
 def test_unquoted_documentary_terms_cannot_change_the_compiled_query_operators(term):
-    result=MarketWorkflow.bind_queries('market_plan',{'tasks':[{'source':'web','query':{'groups':[['D1'],[term]]}}]}, {})
+    result=bind_queries('market_plan',{'tasks':[{'source':'web','query':{'groups':[['D1'],[term]]}}]}, {})
     assert result['tasks'][0]['query']==''
 
 

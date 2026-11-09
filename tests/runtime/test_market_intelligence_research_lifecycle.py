@@ -21,7 +21,7 @@ def test_market_prepare_emits_a_readable_package_without_business_schema(tmp_pat
     config.write_text(json.dumps({'schema_version':1,'research_enabled':False}),encoding='utf-8')
     result=script.prepare_market(tmp_path,config,'candidate')
     source=(tmp_path/'candidate/market_intelligence.py').read_text(encoding='utf-8')
-    assert result['schema_version']==1 and result['business_tables_required'] is False
+    assert result['schema_version']==2 and result['business_tables_required'] is False
     assert 'class Records' not in source and 'SCHEMA_DEFINITION' not in source
     assert 'class MarketIntelligenceAgent' in source
 

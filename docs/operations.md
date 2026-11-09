@@ -1,74 +1,82 @@
 # Operación y recuperación
 
-Deploy Studio gestiona Terraform y llama a los hooks del paquete fijado por release/commit. La CLI opera una instalación existente. Ambas rutas conservan identidad, recibos y configuración; la investigación permanece pausada en TEST.
+## Configuración e identidad
 
-## Estado y Resume
+Deploy Studio administra Terraform y llama a los hooks del paquete seleccionado. El formulario instala o reanuda; la CLI administra una instalación existente. El operador firma las solicitudes OCI. `admin_user_ocid` identifica al propietario autorizado y no sustituye la identidad firmante.
 
-El instalador guarda su recibo v2 en `/Workspace/.control/modules/ai_market_intelligence/installer.json` y publica fuentes bajo `/Workspace/.artifact/ai_market_intelligence`. El avance recorre verificación, credenciales, compute, archivos, agente, permisos y TEST. Post-apply avanza como máximo 80 pasos por invocación.
-
-Una operación pendiente se reanuda con el mismo despliegue, release, administrador y destino. El ID durable `dep_<16hex>` determina el UUID original de instalación; el ID transitorio de preflight no puede sustituirlo. No iniciar otra instalación ni borrar recibos para resolver un timeout. El modelo guardado en `runtime_config` se conserva aunque cambie la selección actual del formulario.
-
-La observación del estado no instala recursos. `status` informa el modelo guardado; el output `configured_agent_model_id` del hook tras update/redeploy/rollback puede estar vacío y no debe interpretarse como pérdida de configuración. TEST ACTIVE e investigación pausada son estados compatibles. El probe exige fuente y sesión exactas y cero llamadas modelo/Apify; no verifica la continuidad del checkpointer ni la calidad de las respuestas.
-
-## Acciones de mantenimiento
-
-| Acción | Comportamiento |
-| --- | --- |
-| `install` | Instala o reanuda el agente TEST de esta instalación. |
-| `update` | Congela paquete/configuración objetivo, respalda el anterior y publica otra revisión TEST. |
-| `redeploy` | Redespliega el mismo paquete y configuración; un cambio de modelo requiere update. |
-| `rollback` | Restaura el candidato y configuración anteriores registrados. |
-
-El mantenimiento requiere instalación ready del mismo propietario, AIDP/workspace, agente, compute y credenciales. En una solicitud nueva de Deploy Studio se seleccionan **AIDP, bucket y base existing**. El stack original conserva la propiedad; no convertir sus selectores para simular una transferencia de state. Un despliegue PROD que comparta las fuentes bloquea su modificación.
-
-Update/redeploy derivan una operación del despliegue durable, acción, hash del paquete y digest del modelo. `operation_request_id` permite otro UUID explícito para una nueva solicitud; conservarlo durante Resume. La sesión TEST se reutiliza y contrasta con agente, compute y endpoint. No se crean sesiones nuevas ni se reinician investigaciones, checkpoints o gasto para actualizar.
-
-El journal guarda respaldos exactos, hashes y estados anterior/objetivo antes de sobrescribir archivos. Solo acepta bytes conocidos; drift ajeno bloquea. El refresh se registra antes de enviarse y una respuesta incierta se reconcilia en lugar de duplicarse. La nueva revisión debe estar ACTIVE y superar el probe antes de confirmar el recibo. Un fallo confirmado restaura el anterior.
-
-Si update/redeploy termina `rolled_back`, esa actualización sigue fallida y devuelve error. Un rollback solicitado y verificado sí puede cerrar correctamente. Rollback no necesita token ni disponibilidad de Apify o metadata del modelo; en Deploy Studio conserva las verificaciones de identidad, infraestructura y asociación de memoria.
-
-## Memoria: rechazo confirmado o resultado incierto
-
-Antes de habilitar AI, el hook revalida al administrador y reserva una intención en `control/ai_market_intelligence/memory/<hash-plataforma>.json` del bucket de artefactos. Guarda operación, plataforma, base, binding e intento; no guarda ADMIN. El POST usa el ETag de AIDP y desactiva reintentos automáticos.
-
-| Situación | Respuesta operativa |
-| --- | --- |
-| READY y `vectorDbId` coincide | Reutilizar la asociación, sin otro POST ni contraseña ADMIN. |
-| ENABLING con la base esperada | Esperar y reanudar el mismo despliegue. |
-| Asociación ausente, otra base, estado desconocido/FAILED | Conservar recursos y revisar la configuración nativa; no sustituir la memoria. |
-| HTTP 400/401/403/404/412 confirmado | La intención queda rejected mediante CAS. Corregir parámetros/ADMIN/permisos y reanudar la misma operación; se reserva otro intento con ETag y retry token nuevos. |
-| Timeout o 409 sin readback READY exacto | Conservar submitted. Reconciliar la solicitud control-plane y su work request; no repetir ni borrar el marcador como atajo. |
-| Intención ajena, inválida o modificada | Detenerse para reconciliación; no adoptar ni sobrescribirla. |
-
-El mantenimiento no habilita AI ni cambia de base. Rollback del agente conserva el servicio de memoria y los checkpoints. No se deshabilitan AI, retención o compartición de sesiones como parte de una recuperación.
-
-## Locks y concurrencia
-
-Instalación/mantenimiento usan un lock Object Storage por plataforma/workspace dentro del bucket configurado: creación `If-None-Match: *`, liberación con ETag exacto, sin expiración ni takeover automático.
-
-Si queda un lock tras un proceso incierto, confirma que no haya un hook ejecutándose y consulta su ETag. La CLI `release-lock` exige `--expected-etag`, `--confirm-no-running-hook` y `--apply`, y vuelve a validar al administrador. No liberar por nombre ni con un ETag obsoleto.
-
-Dos configuraciones con distintos buckets no comparten ese lock, aunque apunten al mismo workspace. Conservar el binding de bucket y serializar externamente todas las operaciones sobre el workspace. La exclusión global entre buckets no está implementada.
-
-## CLI sobre un destino existente
-
-`Settings` acepta `oci_config_file`, `aidp_region`, `aidp_platform_id`, `aidp_workspace_key`/`aidp_workspace_name`, `compartment_id`, `objectstorage_namespace`, `artifacts_bucket_name`, `agent_model_id`, `identity_domain_id` y `admin_user_ocid`. Guarda el archivo fuera de Git y usa referencias exactas.
+Los settings privados incluyen destino AIDP/workspace, región, bucket/namespace, dominio, administrador y modelo. No se publican configuraciones reales, `.oci`, claves, tokens, state ni recibos. El token Apify se entrega por archivo protegido o Credential Store, nunca como argumento literal.
 
 ```powershell
 uv run aidp-market --help
 uv run aidp-market status --settings .local/market-settings.json
 ```
 
-`status` consulta OCI y revalida permisos. La CLI no crea plataforma/base ni prepara o comprueba la asociación de memoria: esa responsabilidad corresponde al despliegue o a la configuración nativa autorizada antes de usarla.
+`status` observa y revalida permisos; no instala ni activa investigación. La CLI presupone que la infraestructura y la asociación de memoria ya existen.
 
-Install/update/redeploy requieren `--operation-id` con UUID canónico, `--token-file` con la ruta al secreto Apify y `--apply`; `--test-session-id` selecciona una sesión existente cuando corresponde. Rollback usa UUID y `--apply`, sin token. Mantén los identificadores al reanudar. Nunca pasar el token real como argumento ni pegar settings/recibos en logs.
+## Instalación y estado
 
-## Secretos y comprobaciones
+El recibo individual está en `/Workspace/.artifact/ai_market_intelligence/.control/installer.json`. El código está en la carpeta hermana `agents/`, con entrada y dependencias directas y módulos en `core/`. Los respaldos de mantenimiento quedan fuera del subtree ejecutable.
 
-El operador sigue firmando; el administrador no se suplanta. Se revalidan dominio, actividad y roles durante los avances. Apify consulta cuenta/actor/build en lectura; 401/403 requieren revisar credencial/acceso y 404 puede indicar ausencia o falta de visibilidad. Las lecturas no prueban entitlement de ejecución. Los errores públicos omiten cuerpos SDK y secretos.
+La instalación recorre verificación, credenciales, compute, archivos, agente, permisos y TEST. Resume conserva operación, sesión y recursos confirmados. TEST ACTIVE e investigación pausada son estados compatibles: el probe pausado comprueba identidad, revisión y sesión sin inferencia ni actores; no demuestra calidad de investigación ni continuidad de checkpoints.
 
-El state/plan de creación puede contener ADMIN pese a `sensitive=true`; mantenerlo en almacenamiento privado. Apify queda fuera de Terraform. Los hooks reciben contexto/secrets por archivos protegidos del runner y no instalan dependencias durante la ejecución.
+## Mantenimiento
 
-Para validación local utiliza `scripts/arch-postflight.ps1`: pruebas Python, package-check, protocolo Node, formato/validación/tests Terraform, límites y Sentrux. Requiere proveedores inicializados; no ejecuta apply ni descarga proveedores. Conserva la baseline existente: `arch-preflight.ps1` se detiene si ya existe para impedir sobrescribirla. Las pruebas con mocks no acreditan IAM, red, entorno del compute, asociación real ni persistencia de checkpoints.
+| Acción | Comportamiento |
+| --- | --- |
+| `update` | Aplica el paquete o configuración seleccionados con respaldo y verificación. |
+| `redeploy` | Redespliega el paquete y configuración seleccionados sin cambiar de modelo. |
+| `rollback` | Restaura el snapshot respaldado y verifica TEST. |
+| `activate-test` | Activa investigación mediante un binding completo sobre el mantenimiento existente. |
 
-No están implementados activar investigación por un comando público, publicación PROD, delete ni transferencia de state. La aceptación nativa, continuidad/aislamiento de memoria y calidad de investigación siguen siendo comprobaciones separadas.
+Las operaciones de escritura requieren `--apply` y un UUID canónico `--operation-id`. Mantener el mismo UUID al reanudar. Install/update/redeploy reciben `--token-file`; rollback no necesita token ni disponibilidad de Apify. El binding activo se conserva en actualizaciones posteriores.
+
+El journal congela configuración y hashes, respalda bytes antes de escribir y admite sólo bytes conocidos. El refresco se registra antes de enviarse. Una operación pendiente no se anuncia como completada: hay que observar o reanudar su journal. Un update que termina restaurado sigue siendo un update fallido; un rollback solicitado puede completar correctamente.
+
+## Actualizar TEST conservando PROD
+
+El mantenimiento bloquea por defecto una instalación con PROD. La ruta explícita utiliza `--preserve-prod --plugin-scripts <directorio-del-plugin>` y el adaptador `PluginTestDeployment`. Mantiene el lock propietario y usa realmente `native sync` y `native test-refresh` del plugin; no crea otro ejecutor de despliegue.
+
+La operación fija el snapshot publicado y verifica agente, compute, endpoint y configuración durante actualización y commit. No modifica ni elimina PROD. Una publicación es un snapshot separado del código de desarrollo: [Oracle Agent Flow deployment](https://docs.oracle.com/en/cloud/paas/ai-data-platform/aidug/agent-flow-deployment.html).
+
+Los recibos del plugin y del instalador conservan su procedencia. Una respuesta perdida se reconcilia contra el intent existente antes de repetir un POST. La confirmación exige TEST ACTIVE, revisión servida y probe correctos. Si falla de forma confirmada, el rollback restaura el respaldo y refresca TEST.
+
+## Activar investigación
+
+`activate-test` recibe `--research-binding`, settings privados, UUID y `--apply`. Reutiliza respaldo, lock, journal, refresco y rollback. No crea compute, credenciales o sesiones ni exige exportar el token ya instalado.
+
+El binding debe conservar identidad, Credential Store, modelo, región/compartimento, almacenamiento y generación. Fuentes, idioma, guardrails y perfil observado del runtime son explícitos. `candidate_revision` selecciona el hash del paquete canónico. Un binding distinto no puede reanudar la misma operación; una respuesta incierta no declara activación.
+
+Después, `inspect_runtime` comprueba código y modo, y `check_services` comprueba servicios sin iniciar investigación. Una consulta real sigue siendo necesaria para comprobar el flujo funcional.
+
+## Publicar y registrar para Agent Hub
+
+La publicación se realiza con la CLI AIDP Agent Flow LangGraph instalada. Comprobar su ayuda y el proyecto privado antes de ejecutar; no forma parte del comando `aidp-market install` ni de una actualización TEST implícita.
+
+1. Verificar layout exacto y aceptar el candidato servido en TEST bajo sus criterios declarados.
+2. Planificar y aplicar `native publish` con autorización de publicación, manteniendo el lock propietario.
+3. Observar y reconciliar el intent hasta confirmar la revisión publicada y el endpoint.
+4. Inspeccionar la tarjeta y registrar o adoptar la identidad exacta en AI Registry.
+5. Comprobar `registry readiness` y abrir Agent Hub mediante el enlace verificado.
+6. Enviar una consulta real en el cliente y observar progreso, bloques y resultado final.
+
+`registry portal-link` sólo resuelve navegación; `registry readiness` exige publicación y registro ACTIVE. Ninguno acredita que el chat haya atendido una pregunta. Un agente reemplazado no hereda el registro del anterior. Tras republicar hay que comprobar la versión y el contrato registrados.
+
+La disponibilidad del endpoint, el registro, el streaming del cliente y la calidad factual son verificaciones distintas. Una entrega parcial o fallida en el chat no se presenta como investigación completada por el hecho de que el despliegue esté activo.
+
+## Locks y recuperación de incertidumbre
+
+El lock Object Storage es por plataforma/workspace y bucket: creación condicional y liberación con ETag exacto, sin expiración ni takeover automático. Configuraciones que usan buckets distintos no comparten exclusión; conservar el binding y serializar operaciones del workspace.
+
+`release-lock` requiere ETag observado, `--confirm-no-running-hook` y `--apply`. Nunca liberar por nombre ni borrar recibos para desbloquear. Cuando una escritura queda incierta, conservar bloqueo e intent y observar su resultado; no iniciar otra operación para sustituirla.
+
+La habilitación de memoria utiliza un intent en el bucket y comprueba READY con la base exacta. Un rechazo confirmado permite corregir y reanudar; timeout o resultado ambiguo conservan el intent enviado hasta reconciliación. No cambiar la base asociada para recuperar un agente. El mantenimiento conserva memoria y checkpoints.
+
+## Cambios de estructura
+
+`native inspect-binding` observa por separado ubicación CODE y archivos ejecutables. `native inspect-layout` verifica inventario completo. Cambiar entry/dependencies no mueve los metadatos ni el recibo. Los comandos `migrate` y `rebuild-development` son operaciones administrativas explícitas con contratos propios; no sustituyen una actualización ordinaria.
+
+Las rutas e inventarios de recuperación deben coordinarse con el instalador antes de retirar archivos. El registro permanece por artefacto, fuera de `agents/`. Un árbol ejecutable sobrante impide declarar el layout cerrado aunque TEST responda.
+
+## Límites operativos
+
+La CLI del producto no ofrece delete, transferencia de state ni publicación PROD directa; la publicación del agente corresponde al plugin. La asociación READY de memoria no demuestra continuidad o aislamiento de checkpoints. Una prueba local no acredita IAM, red, dependencias ni streaming nativos. Las incertidumbres deben mantenerse visibles hasta su reconciliación.

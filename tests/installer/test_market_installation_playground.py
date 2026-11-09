@@ -16,11 +16,13 @@ def test_refresh_uses_only_test_payload_and_verified_entry(monkeypatch):
     calls = []
     source = b'approved readable source'
     ga = SimpleNamespace(_workspace=lambda: {'key': 'workspace'}, _request=lambda *a: {'type': 'CODE', 'computeKey': 'compute',
-        'pathInfo': '/Workspace/.artifact/ai_market_intelligence/agents/ai_market_intelligence',
-        'entryFilePath': '/Workspace/.artifact/ai_market_intelligence/agents/ai_market_intelligence/market_intelligence.py',
-        'dependenciesFilePath': '/Workspace/.artifact/ai_market_intelligence/agents/ai_market_intelligence/requirements.txt'},
+        'pathInfo': '/Workspace/.artifact/ai_market_intelligence/agents',
+        'entryFilePath': '/Workspace/.artifact/ai_market_intelligence/agents/market_intelligence.py',
+        'dependenciesFilePath': '/Workspace/.artifact/ai_market_intelligence/agents/requirements.txt'},
         _workspace_object=lambda workspace, path, **k: (b'dependency' if path.endswith('requirements.txt') else source, {}),
         _content_matches=lambda actual, expected: actual == expected,
+        _list=lambda *a, **k: [{'path': '/Workspace/.artifact/ai_market_intelligence/agents/' + name, 'type': 'FILE'}
+                              for name in ('agent-manifest.json', 'market_intelligence.py', 'requirements.txt')],
         session=SimpleNamespace(close=lambda: None))
     monkeypatch.setattr('ai_market_intelligence.installation.playground.AidpClient', lambda settings: ga)
     client = MarketPlaygroundClient.__new__(MarketPlaygroundClient)
@@ -42,11 +44,13 @@ def test_refresh_uses_only_test_payload_and_verified_entry(monkeypatch):
 
 def test_initial_test_requires_native_initialization_without_creating_a_pending_record(monkeypatch):
     from ai_market_intelligence.transport import AidpProvisionConflict
-    root = '/Workspace/.artifact/ai_market_intelligence/agents/ai_market_intelligence'
+    root = '/Workspace/.artifact/ai_market_intelligence/agents'
     ga = SimpleNamespace(_workspace=lambda: {'key': 'workspace'},
         _request=lambda *a: {'type': 'CODE', 'computeKey': 'compute', 'pathInfo': root,
             'entryFilePath': root + '/market_intelligence.py', 'dependenciesFilePath': root + '/requirements.txt'},
         _workspace_object=lambda *a, **k: (b'content', {}), _content_matches=lambda *a: True,
+        _list=lambda *a, **k: [{'path': root + '/' + name, 'type': 'FILE'}
+                              for name in ('agent-manifest.json', 'market_intelligence.py', 'requirements.txt')],
         session=SimpleNamespace(close=lambda: None))
     monkeypatch.setattr('ai_market_intelligence.installation.playground.AidpClient', lambda settings: ga)
     client = MarketPlaygroundClient.__new__(MarketPlaygroundClient)
@@ -63,6 +67,31 @@ def test_refresh_refuses_other_workspace_before_any_request():
     client._workspace = lambda: pytest.fail('No lookup is needed for a mismatched target')
     with pytest.raises(RuntimeError, match='workspace identity'):
         client.refresh('other', 'agent', 'compute', b'source', assets={}, expected_workspace='workspace')
+
+
+@pytest.mark.parametrize('extra', [
+    {'path': 'old.py', 'type': 'FILE'},
+    {'path': 'ai_market_intelligence', 'type': 'FOLDER'},
+    {'path': '.control', 'type': 'FOLDER'},
+])
+def test_deploy_studio_TEST_cannot_accept_extra_source_objects(monkeypatch, extra):
+    from ai_market_intelligence.errors import AidpProvisionConflict
+    root = '/Workspace/.artifact/ai_market_intelligence/agents'
+    ga = SimpleNamespace(_workspace=lambda: {'key': 'workspace'},
+        _request=lambda *a: {'type': 'CODE', 'computeKey': 'compute', 'pathInfo': root,
+                            'entryFilePath': root + '/market_intelligence.py', 'dependenciesFilePath': root + '/requirements.txt'},
+        _workspace_object=lambda *a, **k: (b'content', {}), _content_matches=lambda *a: True,
+        _list=lambda *a, **k: [{'path': root + '/' + name, 'type': 'FILE'}
+                              for name in ('agent-manifest.json', 'market_intelligence.py', 'requirements.txt')]
+                              + [{**extra, 'path': root + '/' + extra['path']}],
+        session=SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr('ai_market_intelligence.installation.playground.AidpClient', lambda settings: ga)
+    client = MarketPlaygroundClient.__new__(MarketPlaygroundClient)
+    client.settings = object()
+    client._request = lambda *a, **k: pytest.fail('A dirty source tree cannot submit TEST')
+    with pytest.raises(AidpProvisionConflict, match='unexpected'):
+        client.refresh('workspace', 'agent', 'compute', b'content', assets={'requirements.txt': b'content'},
+                       expected_workspace='workspace', on_submit=lambda *a: pytest.fail('No deployment intent before layout verification'))
 
 
 def test_test_revision_history_selects_newest_only_for_same_endpoint_and_compute():

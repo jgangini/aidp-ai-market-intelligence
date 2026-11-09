@@ -7,7 +7,10 @@ name = "aidp-ai-market-intelligence"
 version = "0.1.0"
 description = "Independent AIDP Market Intelligence TEST installer and portable agent"
 requires-python = ">=3.11,<3.13"
-dependencies = ["oci==2.189.0", "pydantic>=2.11,<3", "httpx==0.28.1", "pypdf==6.20.1", "langgraph==0.6.7", "tzdata; sys_platform == 'win32'"]
+dependencies = ["oci==2.189.0", "pydantic>=2.11,<3", "httpx==0.28.1", "pypdf==6.20.1", "langgraph==1.2.4", "tzdata; sys_platform == 'win32'"]
+
+[tool.uv]
+constraint-dependencies = ["langgraph-checkpoint==4.1.1", "langgraph-prebuilt==1.1.0"]
 
 [project.scripts]
 aidp-market = "ai_market_intelligence.cli:main"

@@ -20,7 +20,7 @@ def test_catalogue_has_distinct_query_destination_and_financial_contracts_withou
 
     tools={tool['name']:tool for tool in actor_tool_specifications(['web','x','youtube','facebook','instagram','market_data','world_bank'])}
 
-    assert len(tools)==10
+    assert len(tools)==9
 
     assert 'query' in tools['facebook_search']['arguments_schema']['properties']
 
@@ -30,7 +30,9 @@ def test_catalogue_has_distinct_query_destination_and_financial_contracts_withou
 
     assert 'countries' in tools['world_bank']['arguments_schema']['properties']
 
-    assert tools['instagram_search']['result_kind']=='popular_reel_captions'
+    assert 'instagram_search' not in tools
+
+    assert tools['instagram_posts']['result_kind']=='selected_destination_posts'
 
     assert tools['website']['arguments_schema']['properties']['max_items']['maximum']==3
 
@@ -44,7 +46,7 @@ def test_catalogue_has_distinct_query_destination_and_financial_contracts_withou
 
         assert not {'actor','build','callOptions','token'}&tool['arguments_schema']['properties'].keys()
 
-    assert {tool['name'] for tool in actor_tool_specifications(['instagram'])}=={'instagram_search','instagram_posts'}
+    assert {tool['name'] for tool in actor_tool_specifications(['instagram'])}=={'web_search_serp','instagram_posts'}
 
 
 
@@ -151,3 +153,19 @@ def test_graph_source_selection_invokes_the_named_tool_and_its_admitted_executor
     assert provider.starts[0]['actor']=='apify/facebook-search-scraper'
 
     assert state['response']['status']=='complete'
+
+
+def test_plan_cannot_silently_omit_a_source_selected_by_intake():
+    from langgraph.checkpoint.memory import InMemorySaver
+    from ai_market_intelligence.runtime.workflow import MarketWorkflow
+    from tests.runtime.test_market_intelligence_graph import market_fixture,market_run
+    store,model,collector,_=market_fixture(('facebook','instagram'))
+    original=model.ask
+    async def omit_source(name,schema,payload):
+        result=await original(name,schema,payload)
+        return {'tasks':result['tasks'][:1]} if name=='market_plan' else result
+    model.ask=omit_source
+    graph=MarketWorkflow(store,model,collector,enabled_sources=('facebook','instagram')).build(InMemorySaver())
+    _,state=market_run(graph)
+    assert not collector.calls
+    assert state['response']['status']=='failed' and state['response']['failure']['stage']=='plan'
