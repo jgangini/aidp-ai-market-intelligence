@@ -24,7 +24,7 @@ La instalación recorre verificación, credenciales, compute, archivos, agente, 
 | Acción | Comportamiento |
 | --- | --- |
 | `update` | Aplica el paquete o configuración seleccionados con respaldo y verificación. |
-| `redeploy` | Redespliega el paquete y configuración seleccionados sin cambiar de modelo. |
+| `redeploy` | Redespliega exactamente el paquete y la configuración instalados; otro candidato requiere `update`. |
 | `rollback` | Restaura el snapshot respaldado y verifica TEST. |
 | `activate-test` | Activa investigación mediante un binding completo sobre el mantenimiento existente. |
 

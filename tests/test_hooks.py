@@ -1,11 +1,13 @@
 """Runner contracts and ownership failures without OCI or Apify connections."""
 import json
 import hashlib
+import re
+from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest.mock import Mock
 import pytest
 from ai_market_intelligence import hooks
-from ai_market_intelligence.errors import AidpProvisionConflict
+from ai_market_intelligence.errors import AidpMemoryAssociationConflict, AidpProvisionConflict, AidpProvisionPending
 
 OP = '00000000-0000-4000-8000-000000000001'
 DEPLOYMENT = 'dep_0123456789abcdef'
@@ -67,6 +69,18 @@ def test_new_preflight_does_not_consult_nonexistent_aidp_roles(native, monkeypat
     assert 'synthetic-local-preflight-secret' not in json.dumps(result)
     hooks.preflight_memory.assert_called_once()
     assert hooks.preflight_memory.call_args.args[2]['region'] == 'us-chicago-1'
+
+
+def test_signed_domain_endpoint_satisfies_manifest_runtime_contract(native, monkeypatch):
+    from ai_market_intelligence.authorization import resolve_domain
+    native.identity.get_domain.return_value.data = NS(id=DOMAIN, lifecycle_state='ACTIVE',
+        url='https://domain.identity.oraclecloud.com:443/')
+    monkeypatch.setattr(hooks, 'resolve_domain', resolve_domain)
+    result = hooks.preflight(context(), secrets(), 'synthetic-config')
+    manifest = json.loads((Path(__file__).parents[1] / 'terraform/deploy-studio.json').read_text(encoding='utf-8'))
+    endpoint_field = next(field for field in manifest['preflight']['runtime_fields'] if field['name'] == 'identity_domain_url')
+    assert result['inputs']['identity_domain_url'] == 'https://domain.identity.oraclecloud.com'
+    assert re.fullmatch(endpoint_field['pattern'], result['inputs']['identity_domain_url'])
 
 
 def test_existing_preflight_uses_exact_key_and_revalidates_roles(native, monkeypatch):
@@ -131,6 +145,32 @@ def test_runner_failure_never_serializes_secret_or_exception_body(tmp_path, monk
     assert json.loads(paths['result'].read_text())['events'][0]['status'] == 'failed'
 
 
+@pytest.mark.parametrize('kind', ['preflight', 'post_apply'])
+@pytest.mark.parametrize('error,expected', [(AidpProvisionPending, 'still pending'),
+    (AidpMemoryAssociationConflict, 'memory database association could not be verified')])
+def test_runner_memory_diagnostics_are_constant_and_fail_closed(tmp_path, monkeypatch, capsys, kind, error, expected):
+    marker = 'private-memory-exception-body'
+    context_path, secrets_path, result_path = (tmp_path / name for name in ('context.json', 'secrets.json', 'result.json'))
+    context_path.write_text(json.dumps(context()))
+    secrets_path.write_text(json.dumps({'inputs': {'apify_token': marker}}))
+    for name, path in [('DEPLOY_STUDIO_CONTEXT', context_path), ('DEPLOY_STUDIO_SECRETS', secrets_path),
+                       ('DEPLOY_STUDIO_RESULT' if kind == 'preflight' else 'DEPLOY_STUDIO_OUTPUT', result_path)]:
+        monkeypatch.setenv(name, str(path))
+    monkeypatch.setenv('DEPLOY_STUDIO_OCI_CONFIG', 'not-a-real-config')
+    def failure(*args):
+        raise error(marker)
+    monkeypatch.setattr(hooks, kind, failure)
+    assert hooks.run_hook(kind) == 1
+    text = result_path.read_text()
+    captured = capsys.readouterr()
+    assert marker not in text + captured.out + captured.err
+    result = json.loads(text)
+    assert result['inputs' if kind == 'preflight' else 'outputs'] == {}
+    assert expected in result['events'][0]['message']
+    assert len(result['events']) == 1
+    assert result['events'][0].get('status', result['events'][0].get('level')) in ('failed', 'error')
+
+
 def test_transient_real_preflight_id_is_not_used_as_operation_identity(native):
     c = context()
     c['deployment_id'] = 'preflight-123456abcdef'
@@ -159,7 +199,8 @@ def test_fresh_maintenance_request_cannot_create_platform_or_bucket(monkeypatch,
 
 
 @pytest.mark.parametrize('foreign_bucket,pending_memory,revoked_admin', [(False,False,False), (True,False,False), (False,True,False), (False,False,True)])
-def test_postapply_binds_exact_owned_bucket_before_install(monkeypatch, foreign_bucket, pending_memory, revoked_admin):
+@pytest.mark.parametrize('unavailable_navigation', [False, True])
+def test_postapply_binds_exact_owned_bucket_before_install(monkeypatch, foreign_bucket, pending_memory, revoked_admin, unavailable_navigation):
     memory = Mock(return_value='ocid1.autonomousdatabase.oc1..synthetic')
     if pending_memory:
         memory.side_effect = AidpProvisionConflict('Memory association is unverified')
@@ -187,6 +228,10 @@ def test_postapply_binds_exact_owned_bucket_before_install(monkeypatch, foreign_
     monkeypatch.setattr(hooks, 'MarketAidpClient', Client)
     platform = Mock()
     monkeypatch.setattr(hooks, '_platform', platform)
+    navigation = Mock(return_value='https://testordagenthub.datalake.oci.oraclecloud.com/static/ah/#?tenant=test&domain=Default')
+    if unavailable_navigation:
+        navigation.side_effect = AidpProvisionConflict('Navigation metadata unavailable')
+    monkeypatch.setattr(hooks, 'agent_hub_url', navigation)
     monkeypatch.setattr(hooks, 'check_apify', lambda token: {'reads_verified': True})
     install = Mock(return_value={'status': 'active', 'phase': 'ready', 'operation_id': hooks.operation_id(DEPLOYMENT)})
     monkeypatch.setattr(hooks, 'install', install)
@@ -207,6 +252,11 @@ def test_postapply_binds_exact_owned_bucket_before_install(monkeypatch, foreign_
     else:
         result = hooks.post_apply(c, secrets(), 'config')
         assert result['outputs']['research_enabled'] is False
+        if unavailable_navigation:
+            assert result['outputs']['application_url'] == ''
+            assert result['events'][-1]['level'] == 'warning'
+        else:
+            assert result['outputs']['application_url'] == 'https://testordagenthub.datalake.oci.oraclecloud.com/static/ah/#?tenant=test&domain=Default'
         assert result['outputs']['deployment_surface'] == 'TEST'
         assert result['outputs']['maintenance_action'] == 'install'
         assert result['outputs']['operation_id'] == hooks.operation_id(DEPLOYMENT)

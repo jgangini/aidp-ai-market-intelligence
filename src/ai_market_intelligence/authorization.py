@@ -8,13 +8,17 @@ from .errors import AidpProvisionConflict
 def resolve_domain(client):
     iam = oci.identity.IdentityClient(client._oci_config, signer=client.signer)
     domain = iam.get_domain(client.settings.identity_domain_id).data
-    url = str(domain.url or '').rstrip('/')
-    parsed = urlsplit(url)
+    try:
+        parsed = urlsplit(str(domain.url or ''))
+        port = parsed.port
+    except ValueError as exc:
+        raise AidpProvisionConflict('The selected Identity Domain endpoint is invalid.') from exc
     if domain.id != client.settings.identity_domain_id or domain.lifecycle_state != 'ACTIVE' or (
             parsed.scheme != 'https' or parsed.username or parsed.password or parsed.query or parsed.fragment or
-            parsed.port not in (None, 443) or not parsed.hostname or not parsed.hostname.endswith('.oraclecloud.com')):
+            port not in (None, 443) or parsed.path not in ('', '/') or
+            not parsed.hostname or not parsed.hostname.endswith('.oraclecloud.com')):
         raise AidpProvisionConflict('The selected Identity Domain is not active or its endpoint is invalid.')
-    return url
+    return 'https://' + parsed.hostname
 
 
 def verify_administrator(client, *, roles_required=True, domain_client=None):

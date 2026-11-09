@@ -17,7 +17,7 @@ El entorno de hooks y el AI Compute son entornos distintos. Comprobar el perfil 
 
 AIDP Agent Flow LangGraph aporta las operaciones `doctor`, `runtime`, `test`, `quality`, `campaign`, `native` y `registry`. El plugin se instala por separado; no está vendoreado ni se descarga implícitamente al instalar el producto. Usar su ayuda y guías para la revisión instalada.
 
-Los factories de `scripts/market_intake.py`, `market_frozen.py` y `market_fixture.py` permiten recorrer interpretación, captura sellada y evaluaciones focales con el grafo del proyecto. La configuración local `aidp-agent.toml`, la campaña y los resultados `.aidp-local/` están excluidos de Git.
+El factory de `scripts/market_intake.py` permite recorrer interpretación y planificación. `tests/runtime/market_fixture_factory.py` aporta el factory de captura sellada y `scripts/market_frozen.py` prepara y ejecuta esas pruebas con el grafo del proyecto. La configuración local `aidp-agent.toml`, la campaña y los resultados `.aidp-local/` están excluidos de Git.
 
 Mantener el ejecutor, modelo, captura y reloj fijos durante una medición. Registrar hipótesis y efectos, conservar fallos y conciliar intentos inciertos antes de repetir. Una nueva revisión invalida sólo la evidencia que depende de sus cambios; no convierte ensayos anteriores en resultados del candidato nuevo.
 

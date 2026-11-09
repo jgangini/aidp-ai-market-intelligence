@@ -12,10 +12,11 @@ from pydantic import SecretStr
 from .apify_preflight import check_apify
 from .authorization import resolve_domain, verify_administrator
 from .client import MarketAidpClient
-from .errors import AidpProvisionConflict
+from .errors import AidpMemoryAssociationConflict, AidpProvisionConflict, AidpProvisionPending
 from .lifecycle import install
 from .settings import Settings
 from .memory import preflight_memory, ensure_memory
+from .access import agent_hub_url
 
 
 def _outputs(context):
@@ -70,6 +71,7 @@ def _platform(client, *, newly_owned=False, deployment_binding=''):
         raise AidpProvisionConflict('Selected AIDP is not ACTIVE. Preserve the deployment and resume after readiness.')
     if newly_owned and (platform.freeform_tags or {}).get('deployment_binding') != deployment_binding:
         raise AidpProvisionConflict('New-platform ownership differs from this exact deployment. No administrator was assigned.')
+    return platform
 
 
 def preflight(context, secrets, config_file):
@@ -204,7 +206,7 @@ def post_apply(context, secrets, config_file):
         if outputs.get('deployment_binding') != expected_binding:
             raise AidpProvisionConflict('Terraform ownership binding differs from this exact deployment and selected identities.')
         new = outputs.get('owned_ai_data_platform') is True
-        _platform(client, newly_owned=new, deployment_binding=expected_binding)
+        platform = _platform(client, newly_owned=new, deployment_binding=expected_binding)
         bucket = client.object_storage.get_bucket(settings.objectstorage_namespace, settings.artifacts_bucket_name).data
         if bucket.name != settings.artifacts_bucket_name or bucket.namespace != settings.objectstorage_namespace:
             raise AidpProvisionConflict('Artifacts bucket identity differs from the deployment.')
@@ -220,6 +222,10 @@ def post_apply(context, secrets, config_file):
         # The default workspace of a new platform is matched exactly once, then bound by key.
         workspace = client._workspace()
         client.settings = settings.model_copy(update={'aidp_workspace_key': workspace['key']})
+        try:
+            navigation_url = agent_hub_url(client, platform)
+        except (oci.exceptions.ServiceError, oci.exceptions.RequestException, AidpProvisionConflict, ValueError):
+            navigation_url = ''
         session = context['inputs'].get('test_session_id') or None
         if action == 'install':
             status = install(client, operation, token=_token(secrets), new_platform=new, test_session_id=session)
@@ -238,6 +244,7 @@ def post_apply(context, secrets, config_file):
             status = maintain(client, action, operation, test_session_id=session)
         recovered_failure = status['status'] == 'rolled_back' and action != 'rollback'
         return {'outputs': {'installation_status': status['status'], 'installation_phase': status['phase'],
+            'application_url': navigation_url,
             'operation_id': status['operation_id'], 'deployment_surface': 'TEST', 'research_enabled': status.get('research_enabled', False),
             'apify_execution_permission': 'not_verified', 'workspace_key': workspace['key'], 'maintenance_action': action,
             'autonomous_database_id': memory_database_id, 'memory_status': 'READY',
@@ -245,7 +252,9 @@ def post_apply(context, secrets, config_file):
             'events': [{'level': 'error' if recovered_failure else 'success',
                 'message': ('Candidate update failed; the previous TEST candidate was restored and verified.' if recovered_failure
                             else 'Market lifecycle operation verified in TEST with research enabled.' if status.get('research_enabled', False)
-                            else 'Market lifecycle operation verified in TEST with research paused.')}]}
+                            else 'Market lifecycle operation verified in TEST with research paused.')}]
+                + ([] if navigation_url else [{'level': 'warning',
+                    'message': 'Installation result is preserved; the Agent Hub navigation URL is unavailable.'}])}
     finally:
         asyncio.run(client.close())
 
@@ -262,6 +271,14 @@ def run_hook(kind):
         result = action(context, secrets, os.environ['DEPLOY_STUDIO_OCI_CONFIG'])
         destination.write_text(json.dumps(result), encoding='utf-8')
         return 1 if any(event.get('level') == 'error' for event in result.get('events', [])) else 0
+    except (AidpProvisionPending, AidpMemoryAssociationConflict) as exc:
+        message = ('AIDP provisioning is still pending. Preserve this deployment and resume the same operation.'
+                   if isinstance(exc, AidpProvisionPending) else
+                   'The selected AIDP memory database association could not be verified. Preserve this deployment; no replacement was sent.')
+        event = ({'name': 'Market preflight', 'status': 'failed', 'message': message} if kind == 'preflight'
+                 else {'level': 'error', 'message': message})
+        destination.write_text(json.dumps({'inputs' if kind == 'preflight' else 'outputs': {}, 'events': [event]}), encoding='utf-8')
+        return 1
     except Exception:
         # SDK and validation errors can contain request/credential bodies. Fail closed without echo.
         if kind == 'preflight':

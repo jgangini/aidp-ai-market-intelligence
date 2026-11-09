@@ -15,8 +15,12 @@ Copy-Item -LiteralPath $index -Destination $temporaryIndex
 $previousIndex = $env:GIT_INDEX_FILE
 try {
     $env:GIT_INDEX_FILE = $temporaryIndex
-    git add --intent-to-add -- aidp src scripts tests node-progress.json
+    git add --intent-to-add -- aidp src scripts tests
     if ($LASTEXITCODE -ne 0) { throw 'Unable to build the complete source inventory.' }
+    if (Test-Path -LiteralPath 'node-progress.json') {
+        git add --intent-to-add --force -- node-progress.json
+        if ($LASTEXITCODE -ne 0) { throw 'Unable to include the local progress inventory.' }
+    }
     $sourcePaths = @(git -c core.quotePath=false ls-files --cached)
     if ($LASTEXITCODE -ne 0) { throw 'Unable to record the source inventory.' }
     $scanDirectory = Join-Path $root ('.local/architecture/sentrux-' + [guid]::NewGuid().ToString('N'))
