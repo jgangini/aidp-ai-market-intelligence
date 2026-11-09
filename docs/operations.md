@@ -38,7 +38,7 @@ El mantenimiento bloquea por defecto una instalación con PROD. La ruta explíci
 
 La operación fija el snapshot publicado y verifica agente, compute, endpoint y configuración durante actualización y commit. No modifica ni elimina PROD. Una publicación es un snapshot separado del código de desarrollo: [Oracle Agent Flow deployment](https://docs.oracle.com/en/cloud/paas/ai-data-platform/aidug/agent-flow-deployment.html).
 
-Los recibos del plugin y del instalador conservan su procedencia. Una respuesta perdida se reconcilia contra el intent existente antes de repetir un POST. La confirmación exige TEST ACTIVE, revisión servida y probe correctos. Si falla de forma confirmada, el rollback restaura el respaldo y refresca TEST.
+Los recibos del plugin y del instalador conservan su procedencia. Una respuesta perdida se reconcilia contra el intent existente antes de repetir un POST. Los efectos inciertos del modelo guardan el tipo de excepción y, si el proveedor lo expone, el código HTTP de error; excluyen mensajes, prompts y credenciales. El estado incierto no prueba por sí solo un fallo HTTP: también puede proceder del procesamiento de la salida estructurada. La confirmación exige TEST ACTIVE, revisión servida y probe correctos. Si falla de forma confirmada, el rollback restaura el respaldo y refresca TEST.
 
 ## Activar investigación
 

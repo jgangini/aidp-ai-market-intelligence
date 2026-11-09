@@ -241,8 +241,15 @@ class MarketRecordedModel:
         async def recorded():
             try:
                 result = await self.model.ask(name, schema, payload)
-            except BaseException:
-                self.effects.update(key, admitted["claim"], state="uncertain")
+            except BaseException as error:
+                diagnostic = {"error_type": type(error).__name__}
+                status = getattr(error, "status", None)
+                if type(status) is int and 400 <= status <= 599:
+                    diagnostic["http_status"] = status
+                self.effects.update(
+                    key, admitted["claim"], state="uncertain",
+                    result={"diagnostic": diagnostic},
+                )
                 raise
             else:
                 self.effects.update(

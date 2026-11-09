@@ -92,6 +92,40 @@ def recorded_model(ask):
     return MarketRecordedModel(SimpleNamespace(ask=ask), effects), effects
 
 
+@pytest.mark.parametrize("status,recorded_status", [(429, 429), (503, 503), (None, None), ("429", None), (True, None), (200, None)])
+def test_failed_model_records_safe_diagnostic_without_repeating_uncertain_call(status, recorded_status):
+    class ProviderFailure(RuntimeError):
+        pass
+
+    error = ProviderFailure("token=private; https://example.invalid/secret; private prompt")
+    error.status = status
+
+    async def run():
+        calls = []
+
+        async def ask(*args):
+            calls.append(args)
+            raise error
+
+        model, effects = recorded_model(ask)
+        with pytest.raises(ProviderFailure) as caught:
+            await model.ask("first", {}, {})
+        assert caught.value is error
+        operation, = effects.read()[0]["operations"].values()
+        diagnostic = {"error_type": "ProviderFailure"}
+        if recorded_status is not None:
+            diagnostic["http_status"] = recorded_status
+        assert operation["state"] == "uncertain"
+        assert operation["receipt"] is None
+        assert operation["result"] == {"diagnostic": diagnostic}
+        with pytest.raises(MarketEffectPending):
+            await model.ask("different-context", {}, {})
+        assert len(calls) == 1
+        assert len(effects.read()[0]["operations"]) == 1
+
+    asyncio.run(run())
+
+
 def test_thread_local_model_clients_keep_schemas_separate_and_close_with_executor(monkeypatch):
     import hashlib
     import json

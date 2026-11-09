@@ -137,7 +137,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/effects.py",
-      "sha256": "8f505c7fe886e00d6904209e1d52ecad5c76e411147fcdabbbb29d3744153c41"
+      "sha256": "5db9ad4c6d8a0f779d0ccf655ce634a02fb39d36228b2ee2b805d9b788ff45a4"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/factory.py",
@@ -262,5 +262,5 @@
       "sha256": "02d8ebfd9f19dd08b7c1b47e22137899f29fc525e208cdb88c285492e21ad477"
     }
   ],
-  "pack_sha256": "8e427da44a5c154148180bcef629334dd18aba306ed7f47109272e0eefe2cbf4"
+  "pack_sha256": "e0cf39a68adc0a8b4e1d850216255874dd4602e79b9fc0c24988940b236ad869"
 }
