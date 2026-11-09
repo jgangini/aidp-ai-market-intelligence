@@ -18,6 +18,8 @@ El coordinador normaliza entidad, objetivo, periodo y fuentes. Cada rama captura
 
 El proyecto incluye el agente, su paquete de distribución, una CLI administrativa y hooks de Deploy Studio. Utiliza los clientes de AIDP y Agent Hub; no incorpora portal propio, servidor HTTP ni VM administrativa.
 
+Deploy Studio permite elegir **OCI IAM** para Generative AI u **OpenAI** con su API key y modelo. Las credenciales de OpenAI y Apify se guardan por separado en Credential Store de AIDP.
+
 ## Componentes
 
 | Ruta | Responsabilidad |

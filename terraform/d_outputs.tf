@@ -59,6 +59,10 @@ output "agent_model_id" {
   value = var.agent_model_id
 }
 
+output "llm_auth_mode" {
+  value = var.llm_auth_mode
+}
+
 output "owned_ai_data_platform" {
   value = var.aidp_mode == "new"
 }

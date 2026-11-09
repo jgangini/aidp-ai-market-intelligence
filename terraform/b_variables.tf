@@ -98,6 +98,16 @@ variable "agent_model_id" {
   }
 }
 
+variable "llm_auth_mode" {
+  type        = string
+  default     = "oci_iam"
+  description = "OCI inference authentication: IAM or OpenAI-compatible API key; the key stays outside Terraform."
+  validation {
+    condition     = contains(["oci_iam", "openai"], var.llm_auth_mode)
+    error_message = "Select oci_iam or openai."
+  }
+}
+
 variable "objectstorage_namespace" {
   type = string
 }

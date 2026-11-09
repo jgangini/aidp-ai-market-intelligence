@@ -107,6 +107,26 @@ def test_invalid_uuid_is_rejected_before_any_maintenance_mutation(command,capsys
     assert SECRET not in capsys.readouterr().out
 
 
+def test_api_key_file_reaches_owner_without_printing_the_secret(command, monkeypatch, tmp_path, capsys):
+    from ai_market_intelligence import settings
+    monkeypatch.setattr(settings.Settings, 'model_validate_json', lambda raw: NS(llm_auth_mode='openai'))
+    secret = 'fixture_llm_key_' + 'a' * 32
+    key_file = tmp_path / 'llm-key.txt'
+    key_file.write_text(secret + '\n', encoding='utf-8')
+    assert cli.main(['update', *command.base, '--apply', '--llm-api-key-file', str(key_file)]) == 0
+    assert command.maintain.call_args.kwargs['llm_api_key'].get_secret_value() == secret
+    assert secret not in capsys.readouterr().out
+
+
+def test_llm_secret_file_is_rejected_for_iam_without_reading_it(command, monkeypatch, tmp_path, capsys):
+    from ai_market_intelligence import settings
+    monkeypatch.setattr(settings.Settings, 'model_validate_json', lambda raw: NS(llm_auth_mode='oci_iam'))
+    assert cli.main(['update', *command.base, '--apply', '--llm-api-key-file', str(tmp_path / 'missing')]) == 1
+    command.maintain.assert_not_called()
+    command.install.assert_not_called()
+    assert SECRET not in capsys.readouterr().out
+
+
 def test_rollback_status_is_returned_truthfully(command,capsys):
     command.maintain.return_value.update(status='rolled_back',action='rollback')
     assert cli.main(['rollback',*command.base,'--apply']) == 0

@@ -162,13 +162,69 @@
         "group": "artifacts"
       },
       {
+        "name": "llm_auth_mode",
+        "label": "Services LLM",
+        "type": "select",
+        "required": true,
+        "default": "oci_iam",
+        "options": [
+          {
+            "value": "oci_iam",
+            "label": "OCI IAM"
+          },
+          {
+            "value": "openai",
+            "label": "OpenAI"
+          }
+        ],
+        "group": "enterprise_ai",
+        "span": 1
+      },
+      {
+        "name": "llm_api_key",
+        "label": "OpenAI API key",
+        "type": "password",
+        "required": false,
+        "secret": true,
+        "transform": "none",
+        "min_length": 20,
+        "max_length": 4096,
+        "group": "enterprise_ai",
+        "span": 1,
+        "visible_when": {
+          "field": "llm_auth_mode",
+          "equals": "openai"
+        }
+      },
+      {
         "name": "agent_model_id",
         "label": "Select Model",
         "type": "select",
         "required": true,
         "default": "xai.grok-4.7",
         "options_source": "oci_genai_chat_models",
-        "group": "enterprise_ai"
+        "group": "enterprise_ai",
+        "visible_when": {
+          "field": "llm_auth_mode",
+          "equals": "oci_iam"
+        }
+      },
+      {
+        "name": "openai_model_id",
+        "label": "Select Model",
+        "type": "select",
+        "required": true,
+        "min_length": 1,
+        "max_length": 256,
+        "pattern": "^[^\\s\\x00-\\x1f]{1,256}$",
+        "group": "enterprise_ai",
+        "span": 1,
+        "visible_when": {
+          "field": "llm_auth_mode",
+          "equals": "openai"
+        },
+        "options_source": "openai_chat_models",
+        "options_secret_field": "llm_api_key"
       },
       {
         "name": "apify_token",
@@ -350,7 +406,22 @@
         "items": [
           {
             "kind": "field",
+            "name": "llm_auth_mode",
+            "span": 1
+          },
+          {
+            "kind": "field",
+            "name": "llm_api_key",
+            "span": 1
+          },
+          {
+            "kind": "field",
             "name": "agent_model_id",
+            "span": 1
+          },
+          {
+            "kind": "field",
+            "name": "openai_model_id",
             "span": 1
           },
           {
@@ -466,7 +537,8 @@
     "autonomous_database_id",
     "owned_autonomous_database",
     "memory_status",
-    "configured_agent_model_id"
+    "configured_agent_model_id",
+    "llm_auth_mode"
   ],
   "artifacts": [],
   "preflight": {
@@ -475,13 +547,16 @@
     "requires_oci_credentials": true,
     "secret_inputs": [
       "apify_token",
-      "autonomous_database_admin_password"
+      "autonomous_database_admin_password",
+      "llm_api_key"
     ],
     "output_inputs": [
       "home_region",
       "identity_domain_url",
       "objectstorage_namespace",
-      "artifacts_bucket_name"
+      "artifacts_bucket_name",
+      "agent_model_id",
+      "llm_auth_mode"
     ],
     "runtime_fields": [
       {
@@ -520,7 +595,8 @@
     ],
     "secret_inputs": [
       "apify_token",
-      "autonomous_database_admin_password"
+      "autonomous_database_admin_password",
+      "llm_api_key"
     ]
   }
 }

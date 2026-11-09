@@ -20,7 +20,7 @@ def bind_new_administrator(client):
 
 
 def install(client, operation_id, *, token=None, reuse_existing=True, test_session_id=None,
-            new_platform=False, max_steps=80, sleep=time.sleep):
+            new_platform=False, max_steps=80, sleep=time.sleep, llm_api_key=None):
     if not 1 <= max_steps <= 120:
         raise ValueError('Installer progress must be bounded')
     with installation_lock(client, operation_id):
@@ -32,7 +32,8 @@ def install(client, operation_id, *, token=None, reuse_existing=True, test_sessi
             # Re-check revocation on each advance, including every resumed invocation.
             verify_administrator(client)
             status = asyncio.run(client.operate(client.settings.admin_user_ocid, operation_id,
-                reuse_existing=reuse_existing, token=token, test_session_id=test_session_id))
+                reuse_existing=reuse_existing, token=token, test_session_id=test_session_id,
+                **({'llm_api_key': llm_api_key} if llm_api_key is not None else {})))
             if status['status'] in ('error', 'awaiting_action'):
                 raise AidpProvisionConflict(status.get('message') or 'Reconcile the saved installation before resuming.')
             if status.get('installed'):

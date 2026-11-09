@@ -24,6 +24,7 @@ def main(argv=None):
     parser.add_argument('--settings', type=Path)
     parser.add_argument('--operation-id')
     parser.add_argument('--token-file', type=Path, help='Private file containing the Apify token; never passed on the command line')
+    parser.add_argument('--llm-api-key-file', type=Path, help='Protected OpenAI API key file; never a literal command argument')
     parser.add_argument('--test-session-id')
     parser.add_argument('--expected-etag')
     parser.add_argument('--confirm-no-running-hook', action='store_true')
@@ -63,6 +64,16 @@ def main(argv=None):
     client = None
     try:
         settings = Settings.model_validate_json(args.settings.read_text(encoding='utf-8'))
+        llm_options = {}
+        if args.llm_api_key_file:
+            if settings.llm_auth_mode != 'openai' or args.command not in {'install', 'update', 'activate-test'}:
+                raise ValueError('LLM API key input requires an API-key install, update or activation')
+            from .runtime.config import validate_api_key
+            with args.llm_api_key_file.open('r', encoding='utf-8') as stream:
+                raw = stream.read(4098)
+            if len(raw) > 4097:
+                raise ValueError('LLM API key file exceeds its bound')
+            llm_options['llm_api_key'] = SecretStr(validate_api_key(raw.rstrip('\r\n')))
         client = MarketAidpClient(settings)
         verify_administrator(client)
         if args.command == 'status':
@@ -71,7 +82,7 @@ def main(argv=None):
             from .maintenance import maintain
             from .research_activation import read_research_binding
             result = maintain(client, 'update', args.operation_id, test_session_id=args.test_session_id,
-                              runtime_config=read_research_binding(args.research_binding))
+                              runtime_config=read_research_binding(args.research_binding), **llm_options)
         elif args.command == 'rebuild-development':
             if not args.plugin_scripts or not (args.plugin_scripts / 'aidp_agent_flow/native_layout.py').is_file():
                 parser.error('--plugin-scripts must select the reviewed layout-aware AIDP plugin')
@@ -116,7 +127,7 @@ def main(argv=None):
                 if not check_apify(token)['reads_verified']:
                     raise ValueError('Apify read preflight failed; no installation was started')
             if args.command == 'install':
-                result = install(client, args.operation_id, token=token, test_session_id=args.test_session_id)
+                result = install(client, args.operation_id, token=token, test_session_id=args.test_session_id, **llm_options)
             else:
                 from .maintenance import maintain
                 native_factory = None
@@ -125,7 +136,7 @@ def main(argv=None):
                     native_factory = lambda settings: PluginTestDeployment(settings, project=args.project,
                         plugin_scripts=args.plugin_scripts, operation_id=args.operation_id)
                 result = maintain(client, args.command, args.operation_id, test_session_id=args.test_session_id,
-                                  preserve_production=args.preserve_prod, native_factory=native_factory)
+                                  preserve_production=args.preserve_prod, native_factory=native_factory, **llm_options)
         print(json.dumps(result))
         if args.command == 'rebuild-development' and args.apply and result.get('status') != 'completed':
             return 2

@@ -21,6 +21,39 @@ El factory de `scripts/market_intake.py` permite recorrer interpretación y plan
 
 Mantener el ejecutor, modelo, captura y reloj fijos durante una medición. Registrar hipótesis y efectos, conservar fallos y conciliar intentos inciertos antes de repetir. Una nueva revisión invalida sólo la evidencia que depende de sus cambios; no convierte ensayos anteriores en resultados del candidato nuevo.
 
+## Conexión OpenAI
+
+El binding selecciona `oci_iam` (esquema 1 existente) u `openai` (esquema 2).
+OpenAI usa exclusivamente `https://api.openai.com/v1/chat/completions`, con una
+API key del servicio OpenAI; una clave de OCI Generative AI no sirve para esa conexión.
+El runtime nativo y el harness local comparten `OpenAIModel`.
+
+En AIDP, la clave se resuelve desde Credential Store: `AiMarketIntelligenceOpenAI`,
+clave `api_key`. En pruebas locales se inyecta sólo en el entorno del proceso como
+`MARKET_LLM_API_KEY`, desde el gestor de secretos del operador. Nunca incluirla en
+TOML, bindings, fixtures, comandos literales o archivos versionados. La identidad
+OCI sigue proporcionando acceso a AIDP y al almacenamiento.
+
+Las decisiones usan JSON Schema estricto, `max_completion_tokens` y `store=false`.
+Se omite temperatura para admitir modelos de razonamiento sin enviar un parámetro
+incompatible. La adaptación del esquema hace obligatorios todos los campos,
+convierte constantes en enumeraciones y deja las restricciones de longitud de texto
+y unicidad a los validadores originales del workflow. No modifica el contrato de
+dominio ni sus decisiones. Rechaza respuestas truncadas, negativas, llamadas a
+herramientas inesperadas y cuerpos superiores a 1 MiB. No añade retries de transporte
+ni sigue redirecciones; conserva la admisión y observaciones por intento.
+El streaming público de progreso y hallazgos sigue perteneciendo al workflow.
+
+OpenAI sólo admite inicialmente `guardrails_config={"policies":[]}`; rechaza
+políticas OCI configuradas cuya equivalencia no está implementada. No transfiere
+`reasoning_effort` de OCI. Listar modelos verifica el catálogo visible a la clave,
+pero no acredita cuota de inferencia ni calidad. Antes de publicar se requiere una
+llamada focal y aceptación en TEST con el modelo seleccionado.
+
+Referencias: [modelos de OpenAI](https://developers.openai.com/api/reference/resources/models/methods/list),
+[Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)
+y [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
+
 ## Throttling local
 
 `core/model_bridge.py` permite hasta tres intentos para un 429 inequívoco después del envío HTTP y con recorder local. Cada intento utiliza la admisión normal, un UUID y una observación propios. El SDK mantiene sus retries desactivados. El backoff es cancelable, con jitter y esperas de 1–2 y 2–3 segundos.

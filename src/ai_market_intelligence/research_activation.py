@@ -7,6 +7,8 @@ from .client import MODULE_ID, validated_runtime_config
 from .errors import AidpProvisionConflict
 from .package import load_package
 from .transport import GOVERNANCE_CREDENTIAL_NAME
+from .runtime.config import OPENAI_MODE, LLM_CREDENTIAL_NAME, OPENAI_ENDPOINT, llm_auth_mode
+from .installation.credentials import llm_credential_reference
 
 
 def read_research_binding(path):
@@ -34,9 +36,15 @@ def validate_research_target(client, state, config, pack):
                 'candidate_revision': pack}
     if not config['research_enabled'] or any(services.get(key) != value for key, value in expected.items()):
         raise AidpProvisionConflict('Research binding differs from this installation, identity, model or storage.')
-    endpoint = 'https://inference.generativeai.' + services['region'] + '.oci.oraclecloud.com'
+    mode = llm_auth_mode(services)
+    if mode != getattr(client.settings, 'llm_auth_mode', 'oci_iam'):
+        raise AidpProvisionConflict('Research binding differs from the selected LLM authentication mode.')
+    endpoint = (OPENAI_ENDPOINT if mode == OPENAI_MODE else
+                'https://inference.generativeai.' + services['region'] + '.oci.oraclecloud.com')
     if services['model_endpoint'].rstrip('/') != endpoint:
-        raise AidpProvisionConflict('Research model endpoint differs from the selected OCI inference region.')
+        raise AidpProvisionConflict('Research model endpoint differs from the selected provider binding.')
+    if mode == OPENAI_MODE:
+        llm_credential_reference(client, state)
     observed = state['resources'].get('test_verified', {}).get('versions')
     if not observed or services['runtime_profile'] != observed:
         raise AidpProvisionConflict('Research requires the exact runtime profile observed in this installation TEST.')
@@ -51,5 +59,15 @@ def target_configuration(client, state, requested=None):
     if not current['research_enabled']:
         return client._selected_runtime_config()
     target = copy.deepcopy(current)
-    target['services']['candidate_revision'] = pack
+    services = target['services']
+    services.update(candidate_revision=pack, model_id=client.settings.agent_model_id)
+    if getattr(client.settings, 'llm_auth_mode', 'oci_iam') == OPENAI_MODE:
+        target['schema_version'] = 2
+        services.update(llm_auth_mode=OPENAI_MODE, llm_credential_name=LLM_CREDENTIAL_NAME,
+                        model_endpoint=OPENAI_ENDPOINT)
+    else:
+        target['schema_version'] = 1
+        services.pop('llm_auth_mode', None)
+        services.pop('llm_credential_name', None)
+        services['model_endpoint'] = 'https://inference.generativeai.' + services['region'] + '.oci.oraclecloud.com'
     return validate_research_target(client, state, target, pack)

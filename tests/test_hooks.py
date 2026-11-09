@@ -62,7 +62,8 @@ def test_new_preflight_does_not_consult_nonexistent_aidp_roles(native, monkeypat
     monkeypatch.setattr(hooks, 'MarketAidpClient', lambda *a: pytest.fail('New platform has no roles yet'))
     result = hooks.preflight(context(), secrets(), 'synthetic-config')
     assert result['inputs'] == {'home_region': 'us-ashburn-1', 'identity_domain_url': 'https://domain.identity.oraclecloud.com',
-        'objectstorage_namespace': 'namespace', 'artifacts_bucket_name': 'artifacts'}
+        'objectstorage_namespace': 'namespace', 'artifacts_bucket_name': 'artifacts',
+        'agent_model_id': 'model', 'llm_auth_mode': 'oci_iam'}
     assert native.auth.call_args.kwargs == {'roles_required': False}
     assert result['events'][-1]['status'] == 'warning'
     assert 'not verified' in result['events'][-1]['message']
@@ -81,6 +82,29 @@ def test_signed_domain_endpoint_satisfies_manifest_runtime_contract(native, monk
     endpoint_field = next(field for field in manifest['preflight']['runtime_fields'] if field['name'] == 'identity_domain_url')
     assert result['inputs']['identity_domain_url'] == 'https://domain.identity.oraclecloud.com'
     assert re.fullmatch(endpoint_field['pattern'], result['inputs']['identity_domain_url'])
+
+
+def test_api_key_preflight_normalizes_model_without_iam_model_discovery(native, monkeypatch):
+    c = context()
+    c['inputs'].update(llm_auth_mode='openai', openai_model_id='fixture.model')
+    protected = secrets()
+    protected['inputs']['llm_api_key'] = 'fixture_key_' + 'a' * 32
+    monkeypatch.setattr(hooks.oci.generative_ai, 'GenerativeAiClient',
+                        lambda *a, **kw: pytest.fail('API-key selection must not call OCI IAM get_model'))
+    result = hooks.preflight(c, protected, 'synthetic-config')
+    assert result['inputs']['agent_model_id'] == 'fixture.model'
+    assert result['inputs']['llm_auth_mode'] == 'openai'
+    assert protected['inputs']['llm_api_key'] not in json.dumps(result)
+
+
+@pytest.mark.parametrize('key', [None, '', 'short', 'a' * 20 + '\nprivate'])
+def test_api_key_preflight_rejects_missing_or_malformed_protected_input(native, key):
+    c = context()
+    c['inputs'].update(llm_auth_mode='openai', openai_model_id='fixture.model')
+    protected = secrets()
+    protected['inputs']['llm_api_key'] = key
+    with pytest.raises(ValueError):
+        hooks.preflight(c, protected, 'synthetic-config')
 
 
 def test_existing_preflight_uses_exact_key_and_revalidates_roles(native, monkeypatch):

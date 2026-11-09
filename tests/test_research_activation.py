@@ -12,6 +12,7 @@ from ai_market_intelligence.errors import AidpProvisionConflict, AidpProvisionEr
 from ai_market_intelligence.runtime.runtime_versions import RUNTIME_DISTRIBUTIONS, TARGET_GRAPH_PACKAGES
 from test_maintenance import client, run, OP, OTHER, INSTALL, AGENT_ROOT, OLD, encoded, assets_for, assert_resource_identity_preserved
 from test_cli_maintenance import command
+from pydantic import SecretStr
 
 
 PACK = 'a' * 64
@@ -59,6 +60,49 @@ def active_target(client, monkeypatch):
 
 def test_initial_install_still_selects_paused_mode(client):
     assert MarketAidpClient._selected_runtime_config(client)['research_enabled'] is False
+
+
+def test_paused_api_key_binding_is_explicit_schema_two(client):
+    client.settings.llm_auth_mode = 'openai'
+    config = MarketAidpClient._selected_runtime_config(client)
+    assert config == {'schema_version': 2, 'research_enabled': False, 'services': {
+        'model_id': 'selected-model', 'region': 'us-chicago-1', 'compartment_id': 'compartment',
+        'llm_auth_mode': 'openai'}}
+
+
+def test_update_switches_auth_under_lock_and_rollback_preserves_credential(client, active_target, monkeypatch):
+    active_target['services']['guardrails_config'] = {'policies': []}
+    run(client, runtime_config=active_target)
+    client.settings.llm_auth_mode = 'openai'
+    calls = []
+    def ensure(selected, state, key):
+        calls.append(key)
+        state['resources']['llm_credential_key'] = 'llm'
+        selected._save(state)
+    monkeypatch.setattr(work, 'ensure_llm_credential', ensure)
+    monkeypatch.setattr(work, 'llm_credential_reference', lambda *a: {'credential_key': 'llm'})
+    monkeypatch.setattr(activation, 'llm_credential_reference', lambda *a: {'credential_key': 'llm'})
+    result = run(client, operation=OTHER, llm_api_key=SecretStr('a' * 32))
+    assert result['status'] == 'completed'
+    assert client.saved['runtime_config']['schema_version'] == 2
+    assert client.saved['runtime_config']['services']['llm_auth_mode'] == 'openai'
+    assert len(calls) == 1
+    result = run(client, action='rollback', operation=OTHER)
+    assert result['status'] == 'rolled_back'
+    assert client.saved['runtime_config']['schema_version'] == 1
+    assert client.saved['resources']['llm_credential_key'] == 'llm'
+
+
+def test_maintenance_resume_rejects_changed_openai_key_before_reusing_frozen_target(client, monkeypatch):
+    original = 'original-fixture-openai-key-000000000'
+    client.saved['resources'].update(llm_credential_key='llm',
+        llm_secret_sha256=hashlib.sha256(original.encode()).hexdigest())
+    monkeypatch.setattr(work, 'llm_credential_reference', lambda *args: {'credential_key': 'llm'})
+    run(client)
+    previous = copy.deepcopy(client.saved)
+    with pytest.raises(ValueError, match='does not match'):
+        run(client, llm_api_key=SecretStr('different-fixture-openai-key-000000'))
+    assert client.saved == previous
 
 
 def test_explicit_activation_commits_same_resources_and_active_probe(client, active_target):

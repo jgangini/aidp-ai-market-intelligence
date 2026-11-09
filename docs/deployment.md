@@ -2,7 +2,7 @@
 
 ## Requisitos
 
-- Cuenta OCI con permisos para el destino, los recursos seleccionados y el modelo regional.
+- Cuenta OCI con permisos para el destino y los recursos seleccionados; acceso al modelo regional si se elige OCI IAM, o API key de OpenAI si se elige ese proveedor.
 - Identity Domain activo y administrador AIDP elegible. El operador firma; el administrador no es una credencial de suplantación.
 - Autonomous AI Lakehouse 26ai DW, nuevo o existente, para memoria de Agent Flow.
 - Bucket de artefactos privado y credencial Apify protegida.
@@ -33,7 +33,10 @@ Los recursos nuevos quedan vinculados mediante `deployment_binding`; los externo
 | `artifacts_bucket_mode` | Crear o reutilizar bucket; inicialmente crear. |
 | `artifacts_bucket_name` | Nombre al crear; inicialmente `oci_artifacts`. |
 | `existing_artifacts_bucket_name` | Bucket existente resuelto desde OCI. |
-| `agent_model_id` | Modelo regional ACTIVE; la preferencia de formulario se resuelve al OCID disponible. |
+| `llm_auth_mode` | Services LLM: OCI IAM (predeterminado) u OpenAI con su API oficial. |
+| `agent_model_id` | En IAM, modelo regional ACTIVE; la preferencia de formulario se resuelve al OCID disponible. |
+| `openai_model_id` | Select Model obtiene el catálogo visible con la clave de OpenAI desde el backend de Deploy Studio; preflight lo normaliza a `agent_model_id`. |
+| `llm_api_key` | Secreto opcional para crear por primera vez la conexión OpenAI; nunca se transmite a Terraform. |
 | `apify_token` | Credencial secreta para instalación y mantenimiento que la requiera. |
 | `autonomous_database_mode` | Crear o reutilizar memoria. |
 | `autonomous_database_version` | Perfil `26ai:DW`. |
@@ -63,7 +66,13 @@ Habilitar AI necesita autorización administrativa, ETag e intent durable. Una e
 
 ## Secretos
 
-Apify utiliza `secret_inputs` y Credential Store; no entra en Terraform, outputs ni código generado. ADMIN se entrega protegido; al crear Autonomous, su variable sensible puede permanecer en el state privado. No publicar state, `.oci`, settings, recibos ni cuerpos de errores del SDK.
+Apify y la API key LLM utilizan `secret_inputs` y Credential Store; no entran en Terraform, outputs ni código generado. La conexión LLM utiliza `AiMarketIntelligenceOpenAI`, clave `api_key`, separada de Apify y de la identidad OCI administrativa. ADMIN se entrega protegido; al crear Autonomous, su variable sensible puede permanecer en el state privado. No publicar state, `.oci`, settings, recibos ni cuerpos de errores del SDK.
+
+IAM conserva el contrato runtime schema 1. OpenAI utiliza schema 2 y el endpoint fijo `https://api.openai.com/v1`. La clave se introduce al lado de Services LLM; el selector de modelos se vacía al cambiar la clave o proveedor. El campo declara `options_source=openai_chat_models` y `options_secret_field=llm_api_key`; requiere una versión de Deploy Studio que implemente ese contrato. El servidor consulta `/models` sin persistir la clave y cruza sus IDs con los modelos documentados compatibles con texto y Structured Outputs. Un catálogo vacío o un fallo no se reemplaza con modelos inventados. Este listado no acredita inferencia ni cuota.
+
+La clave sólo se entrega al backend protegido de Deploy Studio y al Credential Store durante la instalación. No se guarda en drafts del navegador ni se incorpora al state Terraform. El agente seleccionará el modelo solicitado; la conexión OpenAI no elimina silenciosamente guardrails OCI configurados.
+
+La instalación crea la credencial con intent durable y propiedad de esta instalación. Resume no reenvía una creación incierta, no adopta una credencial ajena ni rota un secreto existente. Update puede cambiar explícitamente OCI IAM/OpenAI bajo el mismo bloqueo de mantenimiento; rollback restaura la configuración anterior y conserva las credenciales para ambas revisiones. La CLI acepta `--llm-api-key-file <archivo-protegido>` en install/update/activate-test; nunca una API key literal. Si la credencial propia ya existe, se reutiliza. El recibo privado conserva su huella SHA-256 desde el intent de creación; una clave suministrada después debe coincidir para que el catálogo consultado y el runtime usen la misma credencial. Una clave distinta se rechaza sin rotación implícita. Un registro sin huella sólo permite reutilización sin suministrar una nueva clave; la rotación explícita queda fuera de este flujo.
 
 El modelo se guarda en el runtime y recibo. La instalación deja investigación pausada: no inicia inferencia ni actores. Activarla requiere el binding completo descrito en [operación](operations.md).
 

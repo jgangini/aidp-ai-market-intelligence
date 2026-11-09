@@ -17,6 +17,7 @@ from .lifecycle import install
 from .settings import Settings
 from .memory import preflight_memory, ensure_memory
 from .access import agent_hub_url
+from .runtime.config import OPENAI_MODE, validate_api_key
 
 
 def _outputs(context):
@@ -26,6 +27,14 @@ def _outputs(context):
 
 def _artifact_context(context):
     fields = context['inputs']
+    mode = fields.get('llm_auth_mode', 'oci_iam')
+    if mode not in ('oci_iam', OPENAI_MODE):
+        raise ValueError('Choose the reviewed LLM authentication mode')
+    if mode == OPENAI_MODE:
+        model = fields.get('openai_model_id', fields.get('agent_model_id'))
+        if not isinstance(model, str) or not re.fullmatch(r'[^\s\x00-\x1f]{1,256}', model):
+            raise ValueError('A bounded API-key model identifier is required')
+        fields = {**fields, 'agent_model_id': model, 'llm_auth_mode': mode}
     mode = fields['artifacts_bucket_mode']
     if mode not in ('new', 'existing'):
         raise ValueError('Choose new or existing artifacts bucket')
@@ -52,7 +61,17 @@ def _settings(context, config_file, *, post_apply):
         compartment_id=binding('compartment_id', context.get('compartment', {}).get('id', '')),
         objectstorage_namespace=binding('objectstorage_namespace'),
         artifacts_bucket_name=binding('artifacts_bucket_name'), agent_model_id=binding('agent_model_id'),
-        identity_domain_id=binding('identity_domain_id'), admin_user_ocid=binding('admin_user_ocid'))
+        identity_domain_id=binding('identity_domain_id'), admin_user_ocid=binding('admin_user_ocid'),
+        llm_auth_mode=binding('llm_auth_mode', 'oci_iam'))
+
+
+def _llm_secret(context, secrets):
+    value = secrets.get('inputs', {}).get('llm_api_key')
+    if context['inputs'].get('llm_auth_mode', 'oci_iam') != OPENAI_MODE:
+        if value:
+            raise ValueError('An LLM API key requires API-key authentication mode')
+        return None
+    return SecretStr(validate_api_key(value)) if value else None
 
 
 def _token(secrets):
@@ -137,10 +156,17 @@ def preflight(context, secrets, config_file):
             'message': 'Rollback restores recorded paused artifacts only; no Apify or model call is required or started.'})
         return {'inputs': {'home_region': home[0], 'identity_domain_url': domain_url,
                            'objectstorage_namespace': namespace, 'artifacts_bucket_name': fields['artifacts_bucket_name']}, 'events': events}
-    model_config = {**config, 'region': context['region']}
-    model = oci.generative_ai.GenerativeAiClient(model_config, signer=signer).get_model(fields['agent_model_id']).data
-    if model.lifecycle_state != 'ACTIVE':
-        raise AidpProvisionConflict('Selected OCI model is not ACTIVE.')
+    llm_key = _llm_secret(context, secrets)
+    if fields.get('llm_auth_mode', 'oci_iam') == OPENAI_MODE:
+        if action == 'install' and llm_key is None:
+            raise ValueError('A protected LLM API key is required for installation')
+        events.append({'name': 'LLM connection', 'status': 'warning',
+                       'message': 'OpenAI connection syntax validated; model access and inference are not verified.'})
+    else:
+        model_config = {**config, 'region': context['region']}
+        model = oci.generative_ai.GenerativeAiClient(model_config, signer=signer).get_model(fields['agent_model_id']).data
+        if model.lifecycle_state != 'ACTIVE':
+            raise AidpProvisionConflict('Selected OCI model is not ACTIVE.')
     apify = check_apify(_token(secrets))
     events.append({'name': 'Apify account', 'status': 'passed' if apify['account']['status'] == 'authenticated' else 'failed',
                    'message': apify['account'].get('message', 'Authenticated account read verified.')})
@@ -156,7 +182,9 @@ def preflight(context, secrets, config_file):
     events.append({'name': 'Apify execution', 'status': 'warning',
                    'message': 'Execution permission/entitlement not verified without starting runs. Research stays paused.'})
     return {'inputs': {'home_region': home[0], 'identity_domain_url': domain_url,
-                       'objectstorage_namespace': namespace, 'artifacts_bucket_name': fields['artifacts_bucket_name']}, 'events': events}
+                       'objectstorage_namespace': namespace, 'artifacts_bucket_name': fields['artifacts_bucket_name'],
+                       'agent_model_id': fields['agent_model_id'],
+                       'llm_auth_mode': fields.get('llm_auth_mode', 'oci_iam')}, 'events': events}
 
 
 def operation_id(deployment_id):
@@ -178,6 +206,8 @@ def maintenance_operation_id(context, action, package_sha256):
     model = {'model_id': context['inputs']['agent_model_id'], 'region': context['region'],
              'compartment_id': _outputs(context).get('compartment_id') or (
                  compartment.get('id', '') if isinstance(compartment, dict) else compartment)}
+    if context['inputs'].get('llm_auth_mode', 'oci_iam') == OPENAI_MODE:
+        model['llm_auth_mode'] = OPENAI_MODE
     binding = hashlib.sha256(json.dumps(model, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     return str(uuid5(NAMESPACE_URL, 'https://github.com/jgangini/aidp-ai_market-intelligence/deployments/'
         + context['deployment_id'] + '/' + action + '/' + package_sha256 + '/' + binding))
@@ -197,6 +227,8 @@ def post_apply(context, secrets, config_file):
     for name in ('admin_user_ocid', 'identity_domain_id', 'agent_model_id', 'artifacts_bucket_name'):
         if outputs.get(name) != context['inputs'].get(name):
             raise AidpProvisionConflict('Terraform selected bindings changed before installation.')
+    if outputs.get('llm_auth_mode', 'oci_iam') != context['inputs'].get('llm_auth_mode', 'oci_iam'):
+        raise AidpProvisionConflict('Terraform LLM authentication binding changed before installation.')
     settings = _settings(context, config_file, post_apply=True)
     client = MarketAidpClient(settings)
     try:
@@ -228,7 +260,9 @@ def post_apply(context, secrets, config_file):
             navigation_url = ''
         session = context['inputs'].get('test_session_id') or None
         if action == 'install':
-            status = install(client, operation, token=_token(secrets), new_platform=new, test_session_id=session)
+            key = _llm_secret(context, secrets)
+            status = install(client, operation, token=_token(secrets), new_platform=new, test_session_id=session,
+                             **({'llm_api_key': key} if key is not None else {}))
         else:
             from .maintenance import maintain
             from .package import load_package
@@ -241,7 +275,9 @@ def post_apply(context, secrets, config_file):
             else:
                 operation = maintenance_operation_id(context, action,
                     load_package('ai_market_intelligence', require_available=False).pack_sha256)
-            status = maintain(client, action, operation, test_session_id=session)
+            key = _llm_secret(context, secrets) if action != 'rollback' else None
+            status = maintain(client, action, operation, test_session_id=session,
+                              **({'llm_api_key': key} if key is not None else {}))
         recovered_failure = status['status'] == 'rolled_back' and action != 'rollback'
         return {'outputs': {'installation_status': status['status'], 'installation_phase': status['phase'],
             'application_url': navigation_url,

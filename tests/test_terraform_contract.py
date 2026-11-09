@@ -52,11 +52,11 @@ def test_declarative_credentials_and_destination_controls_match_capabilities():
 def test_visible_form_matches_governance_layout_except_apify():
     groups = {g['id']: [i['name'] for i in g['items']] for g in MANIFEST['form']['groups']}
     assert groups['aidp_platform'] == ['aidp_mode', 'new_aidp_name', 'existing_ai_data_platform_ocid', 'existing_workspace_key']
-    assert groups['enterprise_ai'] == ['agent_model_id', 'apify_token']
+    assert groups['enterprise_ai'] == ['llm_auth_mode', 'llm_api_key', 'agent_model_id', 'openai_model_id', 'apify_token']
     assert groups['artifacts'] == ['artifacts_bucket_mode', 'artifacts_bucket_name', 'existing_artifacts_bucket_name']
     assert groups['database'] == ['autonomous_database_mode', 'autonomous_database_version', 'existing_autonomous_database_ocid', 'autonomous_database_admin_password']
     fields = {f['name']: f for f in MANIFEST['form']['fields']}
-    assert len(fields) == 15 and not {'test_session_id', 'autonomous_database_compute_count'} & fields.keys()
+    assert len(fields) == 18 and not {'test_session_id', 'autonomous_database_compute_count'} & fields.keys()
     assert fields['admin_user_ocid']['label'] == 'AIDP administrator'
     assert fields['new_aidp_name']['default'] == 'aidp_market_intelligence'
     assert fields['new_aidp_name']['visible_when'] == {'field': 'aidp_mode', 'equals': 'new'}
@@ -79,6 +79,24 @@ def test_apify_secret_cannot_enter_terraform_or_public_outputs():
     assert not re.search(r'variable\s+"(?:apify_token|admin_password|private_key)"', terraform)
     assert not set(MANIFEST["outputs"]) & {name for name, field in fields.items() if field.get("secret")}
     assert MANIFEST["terraform"]["package_oci_credentials"] is False
+
+
+def test_llm_api_key_is_protected_and_separate_from_terraform_bindings():
+    fields = {field['name']: field for field in MANIFEST['form']['fields']}
+    assert fields['llm_auth_mode']['default'] == 'oci_iam'
+    assert fields['llm_auth_mode']['options'] == [
+        {'value': 'oci_iam', 'label': 'OCI IAM'}, {'value': 'openai', 'label': 'OpenAI'}]
+    model = fields['openai_model_id']
+    assert model['type'] == 'select' and model['label'] == 'Select Model'
+    assert model['options_source'] == 'openai_chat_models' and model['options_secret_field'] == 'llm_api_key'
+    assert 'default' not in model
+    assert fields['llm_api_key']['secret'] and fields['llm_api_key']['type'] == 'password'
+    assert fields['llm_api_key']['visible_when'] == {'field': 'llm_auth_mode', 'equals': 'openai'}
+    assert 'visible_when' not in fields['apify_token']
+    for hook in ('preflight', 'post_apply'):
+        assert 'llm_api_key' in MANIFEST[hook]['secret_inputs']
+    assert 'llm_api_key' not in MANIFEST['outputs']
+    assert 'llm_api_key' not in (ROOT / 'terraform/b_variables.tf').read_text()
 
 
 def test_memory_password_uses_protected_hooks_without_aidp_state_credential():

@@ -22,6 +22,8 @@ from ai_market_intelligence.installation.stream import MarketGatewayStream
 from ai_market_intelligence.installation.resources import resource
 from .installation.layout import AGENT_ROOT, LEGACY_AGENT_ROOT, agent_root, metadata_root
 from .runtime.package_identity import file_hashes, inventory_digest, source_identity, validate_inventory
+from .runtime.config import OPENAI_MODE, llm_auth_mode
+from .installation.credentials import ensure_llm_credential, validate_llm_secret
 MODULE_ID = 'ai_market_intelligence'
 ROOT = '/Workspace/.artifact/' + MODULE_ID
 CONTROL_ROOT = ROOT + '/.control'
@@ -42,7 +44,8 @@ def paused_runtime_config(config):
     """Initial installation binds a model without authorizing research."""
     config = validated_runtime_config(config)
     if config['research_enabled'] or (config.get('services') is not None and
-            set(config['services']) != {'model_id', 'region', 'compartment_id'}):
+            set(config['services']) != ({'model_id', 'region', 'compartment_id', 'llm_auth_mode'}
+                if config['schema_version'] == 2 else {'model_id', 'region', 'compartment_id'})):
         raise AidpProvisionConflict('The installer requires an exact paused model binding.')
     return copy.deepcopy(config)
 
@@ -60,6 +63,7 @@ def public_status(manifest=None):
     suffix = state.get('resources', {}).get('apify_token_suffix', '')
     result = {'module_id': MODULE_ID, 'display_name': 'AI Market Intelligence', 'deployment_surface': 'TEST', 'status': state.get('status', 'not_installed'), 'installed': state.get('phase') == 'ready', 'phase': state.get('phase', 'not_installed'), 'enabled': False, 'operation_id': state.get('operation_id'), 'operation_type': 'install', 'message': state.get('message', ''), 'bundled_version': pack.pack_version, 'target_pack_sha256': state.get('pack_sha256'), 'bundled_pack_sha256': pack.pack_sha256, 'reuse_existing': state.get('reuse_existing', True), 'completed_phases': list(phases[:phases.index(state['phase'])]) if state.get('phase') in phases else [], 'apify_credential_status': 'configured' if state.get('resources', {}).get('apify_credential_key') else 'missing', 'apify_credential_owned_by_operation': bool(state.get('resources', {}).get('apify_credential_key')), 'apify_token_suffix': suffix if state.get('resources', {}).get('apify_credential_key') and isinstance(suffix, str) and re.fullmatch('[A-Za-z0-9]{4}', suffix) else '', 'test_sessions': state.get('test_sessions', [])}
     result['configured_agent_model_id'] = model_binding.get('model_id', '')
+    result['configured_llm_auth_mode'] = llm_auth_mode(model_binding)
     result.update(research_enabled=config['research_enabled'],
                   enabled=config['research_enabled'] and state.get('phase') == 'ready')
     maintenance = state.get('maintenance')
@@ -174,13 +178,13 @@ class MarketAidpClient(AidpClient):
             return result
         return await asyncio.to_thread(observe)
 
-    async def operate(self, user_ocid, operation_id, *, reuse_existing, token=None, test_session_id=None):
+    async def operate(self, user_ocid, operation_id, *, reuse_existing, token=None, test_session_id=None, llm_api_key=None):
         if str(UUID(operation_id)) != operation_id:
             raise AidpProvisionConflict('A stable installation operation is required.')
         async with self._locks.setdefault(MODULE_ID, asyncio.Lock()):
-            return await asyncio.to_thread(self._advance, user_ocid, operation_id, reuse_existing, token, test_session_id)
+            return await asyncio.to_thread(self._advance, user_ocid, operation_id, reuse_existing, token, test_session_id, llm_api_key)
 
-    def _advance(self, user, operation, reuse, token, session):
+    def _advance(self, user, operation, reuse, token, session, llm_api_key=None):
         workspace = str(self._workspace()['key'])
         state = self._read_installation(workspace)
         if state and state.get('phase') in {'migration', 'rebuild'}:
@@ -195,6 +199,7 @@ class MarketAidpClient(AidpClient):
         if state['operation_id'] != operation or state['owner'] != user or state['reuse_existing'] is not reuse:
             raise AidpProvisionConflict('Resume the saved installation with the same administrator and settings.')
         self._assert_candidate(state)
+        validate_llm_secret(state, llm_api_key)
         if state['phase'] == 'ready':
             return public_status(state)
         pending_status = 'installing'
@@ -203,7 +208,7 @@ class MarketAidpClient(AidpClient):
         state.pop('native_error', None)
         self._save(state)
         try:
-            next_phase = self._step(state, token, session)
+            next_phase = self._step(state, token, session, llm_api_key) if llm_api_key is not None else self._step(state, token, session)
             if next_phase:
                 state['phase'] = next_phase
             else:
@@ -241,7 +246,7 @@ class MarketAidpClient(AidpClient):
         if state['pack_sha256'] != load_package(MODULE_ID, require_available=False).pack_sha256:
             raise AidpProvisionConflict('Resume the installation with its exact saved package; the bundled candidate changed.')
 
-    def _credentials(self, state, token):
+    def _credentials(self, state, token, llm_api_key=None):
         resources = state['resources']
         shared = self._shared_oci_credential()
         if shared is None:
@@ -276,11 +281,17 @@ class MarketAidpClient(AidpClient):
         else:
             raise AidpProvisionConflict('Enter an Apify token or explicitly reuse the existing project credential.')
         resources['apify_credential_key'] = reference['credential_key']
+        if llm_auth_mode(self._runtime_config(state).get('services', {})) == OPENAI_MODE:
+            ensure_llm_credential(self, state, llm_api_key)
 
     def _selected_runtime_config(self):
-        return paused_runtime_config({'schema_version': 1, 'research_enabled': False, 'services': {
+        config = {'schema_version': 1, 'research_enabled': False, 'services': {
             'model_id': self.settings.agent_model_id, 'region': self.settings.aidp_region,
-            'compartment_id': self.settings.compartment_id}})
+            'compartment_id': self.settings.compartment_id}}
+        if getattr(self.settings, 'llm_auth_mode', 'oci_iam') == OPENAI_MODE:
+            config['schema_version'] = 2
+            config['services']['llm_auth_mode'] = OPENAI_MODE
+        return paused_runtime_config(config)
 
     def _runtime_config(self, state):
         return validated_runtime_config(state.get('runtime_config', {'schema_version': 1, 'research_enabled': False}))
@@ -328,7 +339,7 @@ class MarketAidpClient(AidpClient):
         if digest != resources['test_intent'].get('package_sha256') or source_identity(files) != resources.get('source_sha256') or (expected_hashes is not None and hashes != expected_hashes):
             raise AidpProvisionConflict('The submitted current package bytes changed; its candidate was not replaced.')
 
-    def _step(self, state, token, session):
+    def _step(self, state, token, session, llm_api_key=None):
         phase = state['phase']
         if phase == 'verify':
             if not all((self.settings.objectstorage_namespace, self.settings.compartment_id)):
@@ -341,7 +352,7 @@ class MarketAidpClient(AidpClient):
         elif phase == 'test':
             self._test_step(state, session)
         elif phase == 'credentials':
-            self._credentials(state, token)
+            self._credentials(state, token, llm_api_key)
         elif phase == 'compute':
             self._compute_step(state)
         elif phase == 'permissions':

@@ -101,7 +101,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/config.py",
-      "sha256": "a94c50c3f2bd3be62e089eaaa286da4cbe3f3a98a8cc0a012d71751d6f195e80"
+      "sha256": "57217375a87b0dc67ad128b8555e8dafab49fc3b341f83311c6159dd90a32b97"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/connectors.py",
@@ -169,11 +169,11 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/model.py",
-      "sha256": "ed9c27f31e31f0ea6a7d7ac2c9e437641e89324aff0b8abadd26cfca407c5d6f"
+      "sha256": "77cbc9975591338deb3a6ba8ea88da70edd13aa05613e807e1498cc7bb3c826e"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/model_bridge.py",
-      "sha256": "02ab1a8b8c65ad95cfa9f4ada205a9bf08378689911453414b35e51b7d8918c1"
+      "sha256": "7bbcd60df40c14d35d08c7810ac9f6d3c871966217cffe37b21d058a8732819e"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/native.py",
@@ -213,7 +213,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/services.py",
-      "sha256": "ca120bd607003ba551ce76bb58f6fc872321ec1b9532d73022957c40a65e3246"
+      "sha256": "66f904611f62ab074d9c41fa5f58fbb3dd3b3d4491a4ff716da5f7e23a797cc1"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/session.py",
@@ -262,5 +262,5 @@
       "sha256": "02d8ebfd9f19dd08b7c1b47e22137899f29fc525e208cdb88c285492e21ad477"
     }
   ],
-  "pack_sha256": "e0cf39a68adc0a8b4e1d850216255874dd4602e79b9fc0c24988940b236ad869"
+  "pack_sha256": "dca3aab6a82ba73134c840a6726d0df7ec509d9455f78b582f8520ffffd820d7"
 }

@@ -10,7 +10,10 @@ import os
 from random import random
 import time
 from threading import Lock, local
+from types import SimpleNamespace
 from uuid import uuid4
+
+from .config import OPENAI_MODE, llm_auth_mode
 
 
 LOCAL_MODEL_ATTEMPTS = 3
@@ -78,7 +81,7 @@ class StructuredBridge:
         tracked.close = self.close
         if hasattr(tracked, "_complete"):
             # Only the request construction differs; complete() still owns admission,
-            # counting, errors and _final_text() validates the actual OCI response.
+            # counting, errors and _final_text() validates completion metadata.
             tracked._complete = self.request
 
     def close(self):
@@ -180,17 +183,24 @@ class StructuredBridge:
                 raise ValueError(
                     "Local adapter identity or guardrail parity is not verified"
                 )
-            self._clients.client = oci.generative_ai_inference.GenerativeAiInferenceClient(
-                {**config, "region": settings["region"]},
-                service_endpoint=self.binding["model_endpoint"],
-                retry_strategy=oci.retry.NoneRetryStrategy(),
-                timeout=(10, 120),
-            )
-            with self._client_lock:
-                if self._closed:
-                    self._clients.client.base_client.session.close()
-                    raise ValueError("The model adapter closed before submission")
-                self._sessions.callback(self._clients.client.base_client.session.close)
+            if llm_auth_mode(self.binding) == OPENAI_MODE:
+                from .model import OpenAIModel
+                self._clients.client = OpenAIModel(self.binding, os.environ.get("MARKET_LLM_API_KEY"),
+                                                   max_tokens=settings["max_tokens"])
+            else:
+                self._clients.client = oci.generative_ai_inference.GenerativeAiInferenceClient(
+                    {**config, "region": settings["region"]},
+                    service_endpoint=self.binding["model_endpoint"],
+                    retry_strategy=oci.retry.NoneRetryStrategy(),
+                    timeout=(10, 120),
+                )
+                with self._client_lock:
+                    if self._closed:
+                        self._clients.client.base_client.session.close()
+                        raise ValueError("The model adapter closed before submission")
+                    self._sessions.callback(self._clients.client.base_client.session.close)
+        if llm_auth_mode(self.binding) == OPENAI_MODE:
+            return self.api_key_request(system, question, observation)
         request = models.GenericChatRequest(
             temperature=0,
             max_tokens=settings["max_tokens"],
@@ -229,6 +239,30 @@ class StructuredBridge:
                 ),
             )
         return tracked._final_text(response.data.chat_response)
+
+    def api_key_request(self, system, question, observation):
+        def received(request_id):
+            if observation is not None:
+                path, record = observation
+                update_model_observation(path, record, "HTTP_RESPONSE_RECEIVED", provider_request_id=request_id)
+
+        request_id = None
+        if observation is not None:
+            path, record = observation
+            request_id = record["client_request_id"]
+            update_model_observation(path, record, "HTTP_SUBMISSION_INTENT")
+        return self._clients.client.complete(system, question, self.schema.get(),
+                                             request_id=request_id, on_response=received,
+                                             on_completion=self.api_key_completion)
+
+    def api_key_completion(self, text, usage):
+        # Translate the validated wire response into the existing tracker boundary.
+        usage = {key: value for key in ("prompt_tokens", "completion_tokens", "total_tokens")
+                 if type(value := usage.get(key)) is int and 0 <= value <= 10**9}
+        message = SimpleNamespace(role="ASSISTANT", tool_calls=None,
+                                  content=[SimpleNamespace(type="TEXT", text=text)])
+        choice = SimpleNamespace(finish_reason="stop", message=message, usage=SimpleNamespace(**usage))
+        return self.tracked._final_text(SimpleNamespace(choices=[choice]))
 
     def with_structured_output(self, schema, method):
         if method != "json_schema":

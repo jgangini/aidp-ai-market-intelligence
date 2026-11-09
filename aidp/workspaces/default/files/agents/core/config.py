@@ -37,7 +37,8 @@ SOURCE_KEYS = {
 }
 
 
-def validate_market_config(config):
+def market_config_fields(config):
+    """Select the exact service contract for a validated binding version."""
     if (
         not isinstance(config, dict)
         or set(config)
@@ -46,10 +47,21 @@ def validate_market_config(config):
             {"schema_version", "research_enabled", "services"},
         )
         or type(config.get("schema_version")) is not int
-        or config.get("schema_version") != 1
+        or config.get("schema_version") not in (1, 2)
         or type(config.get("research_enabled")) is not bool
     ):
         raise ValueError("An exact current runtime binding is required")
+    services = config.get("services")
+    api_key_mode = config["schema_version"] == 2
+    if api_key_mode and (not isinstance(services, dict) or llm_auth_mode(services) != OPENAI_MODE):
+        raise ValueError("Schema 2 requires an explicit OpenAI API key connection")
+    if api_key_mode:
+        return PAUSED_MODEL_FIELDS | {"llm_auth_mode"}, SERVICE_FIELDS | {"llm_auth_mode", "llm_credential_name"}
+    return PAUSED_MODEL_FIELDS, SERVICE_FIELDS
+
+
+def validate_market_config(config):
+    paused_fields, active_fields = market_config_fields(config)
     services = config.get("services")
     if services is None:
         if config["research_enabled"]:
@@ -60,15 +72,16 @@ def validate_market_config(config):
     if (
         not config["research_enabled"]
         and isinstance(services, dict)
-        and set(services) == PAUSED_MODEL_FIELDS
+        and set(services) == paused_fields
     ):
         market_paused_model(services)
         return config
-    if not isinstance(services, dict) or set(services) != SERVICE_FIELDS:
+    if not isinstance(services, dict) or set(services) != active_fields:
         raise ValueError(
             "Current services require the complete reviewed binding, without SQL fields"
         )
     market_service_references(services)
+    validate_llm_binding(services)
     market_service_sources(services)
     market_service_profile(services["runtime_profile"])
     return config
@@ -155,3 +168,34 @@ def market_service_profile(profile):
         raise ValueError(
             "Runtime package observations must have bounded names and versions"
         )
+
+
+OPENAI_MODE = "openai"
+OPENAI_ENDPOINT = "https://api.openai.com/v1"
+LLM_CREDENTIAL_NAME = "AiMarketIntelligenceOpenAI"
+LLM_SECRET_KEY = "api_key"
+
+
+def llm_auth_mode(binding):
+    mode = binding.get("llm_auth_mode", "oci_iam")
+    if mode not in ("oci_iam", OPENAI_MODE):
+        raise ValueError("Unsupported LLM authentication mode")
+    return mode
+
+
+def validate_api_key(value):
+    if (not isinstance(value, str) or not 20 <= len(value) <= 4096
+            or any(ord(char) <= 32 or ord(char) >= 127 for char in value)):
+        raise ValueError("A protected OpenAI API key is required")
+    return value
+
+
+def validate_llm_binding(binding):
+    if llm_auth_mode(binding) != OPENAI_MODE:
+        return
+    if binding.get("model_endpoint", "").rstrip("/") != OPENAI_ENDPOINT:
+        raise ValueError("OpenAI inference requires the official OpenAI endpoint")
+    if binding.get("llm_credential_name") != LLM_CREDENTIAL_NAME:
+        raise ValueError("API key inference requires the project LLM credential reference")
+    if binding.get("guardrails_config") != {"policies": []}:
+        raise ValueError("Configured native guardrails cannot be silently removed by the API key connection")

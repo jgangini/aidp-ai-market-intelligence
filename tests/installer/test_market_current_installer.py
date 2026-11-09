@@ -424,6 +424,48 @@ def test_new_receipt_freezes_selected_model_before_any_resume():
     assert stored[-1]['runtime_config']==initial
 
 
+@pytest.mark.parametrize('saved_mode,live_mode', [('openai', 'oci_iam'), ('oci_iam', 'openai')])
+def test_credentials_resume_uses_saved_authentication_not_live_settings(monkeypatch, saved_mode, live_mode):
+    from unittest.mock import Mock
+    api = client()
+    api.settings.llm_auth_mode = live_mode
+    api._shared_oci_credential = lambda: {'key': 'shared'}
+    apify = {'key': 'apify', 'credentialDescription': 'AI Market Intelligence Apify connection',
+             'type': 'SECRET_TOKEN', 'lifecycleState': 'ACTIVE'}
+    monkeypatch.setattr(current, '_project_credential', lambda selected: apify)
+    llm = Mock()
+    monkeypatch.setattr(current, 'ensure_llm_credential', llm)
+    record = saved('credentials', apify_credential_key='apify', shared_oci_credential_key='shared')
+    record['reuse_existing'] = True
+    record['runtime_config'] = {'schema_version': 1, 'research_enabled': False, 'services': {
+        'model_id': 'saved-model', 'region': 'us-chicago-1', 'compartment_id': 'saved-compartment'}}
+    if saved_mode == 'openai':
+        record['runtime_config']['schema_version'] = 2
+        record['runtime_config']['services']['llm_auth_mode'] = saved_mode
+    before = copy.deepcopy(record['runtime_config'])
+    api._credentials(record, None)
+    assert record['runtime_config'] == before
+    if saved_mode == 'openai':
+        llm.assert_called_once_with(api, record, None)
+    else:
+        llm.assert_not_called()
+
+
+@pytest.mark.parametrize('phase', ['compute', 'ready'])
+def test_install_resume_rejects_different_openai_key_after_credential_creation(phase):
+    import hashlib
+    from pydantic import SecretStr
+    api = client()
+    record = saved(phase, llm_credential_key='llm',
+        llm_secret_sha256=hashlib.sha256(b'original-fixture-key-000000000').hexdigest())
+    api._read_installation = lambda workspace: record
+    api._step = lambda *args: pytest.fail('Changed key must stop before another installation phase')
+    before = copy.deepcopy(record)
+    with pytest.raises(ValueError, match='does not match'):
+        api._advance('owner', OP, True, None, None, SecretStr('different-fixture-key-0000000'))
+    assert record == before
+
+
 def test_unbound_existing_paused_receipt_is_not_reconstructed_from_live_model_settings():
     api=client()
     record=saved('ready')

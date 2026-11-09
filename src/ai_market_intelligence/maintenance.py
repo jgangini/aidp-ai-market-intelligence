@@ -15,7 +15,8 @@ from .installation.agent_package import agent_package
 from .installation.layout import agent_root, metadata_root, ROOT
 from .runtime.package_identity import MANIFEST, file_hashes, inventory_digest, source_identity, validate_inventory
 from .installation.compute import prepare_compute
-from .installation.credentials import _project_credential, existing_project_reference
+from .installation.credentials import _project_credential, existing_project_reference, ensure_llm_credential, llm_credential_reference, validate_llm_secret
+from .runtime.config import OPENAI_MODE
 from .installation.playground import MarketPlaygroundClient, deployment_identity
 from .operation import installation_lock
 from .package import load_package
@@ -293,6 +294,8 @@ def _bindings(client, state, *, preserve_production=False):
         existing_project_reference(_project_credential(client), resources.get('apify_credential_key', ''))
     except RuntimeError:
         raise AidpProvisionConflict('The recorded Apify credential identity is not available; no secret was changed.') from None
+    if resources.get('llm_credential_key'):
+        llm_credential_reference(client, state)
     compute = prepare_compute(client, workspace, resources.get('compute_creation_operation', state['operation_id']),
                               expected_key=resources['agent_compute_key'])
     return compute
@@ -631,17 +634,30 @@ def _advance_phase(client, native, state):
         _complete(client, native, state, phase == 'rollback_commit')
 
 
+def _admit_maintenance(client, action, operation_id, preserve_production, llm_api_key):
+    """Validate the existing installation before preparing a connection under its lock."""
+    verify_administrator(client)
+    state = client._read_installation(str(client._workspace()['key']))
+    if not state:
+        raise AidpProvisionConflict('Install this product before maintenance; no resources were created.')
+    _validate_journal(state)
+    _bindings(client, state, preserve_production=preserve_production)
+    journal = state.get('maintenance')
+    if journal and journal.get('status') == 'running' and journal['operation_id'] != operation_id:
+        raise AidpProvisionConflict('Another maintenance operation is active; resume its exact identity.')
+    resuming = journal and journal['operation_id'] == operation_id
+    validate_llm_secret(state, llm_api_key)
+    if action == 'update' and not resuming and getattr(client.settings, 'llm_auth_mode', 'oci_iam') == OPENAI_MODE:
+        ensure_llm_credential(client, state, llm_api_key)
+    return state
+
+
 def maintain(client, action, operation_id, *, test_session_id=None, max_steps=80, sleep=time.sleep, runtime_config=None,
-             preserve_production=False, native_factory=None):
+             preserve_production=False, native_factory=None, llm_api_key=None):
     if action not in {'update', 'redeploy', 'rollback'} or str(UUID(operation_id)) != operation_id or not 1 <= max_steps <= 120:
         raise ValueError('Choose update/redeploy/rollback with a canonical maintenance UUID and bounded progress.')
     with installation_lock(client, operation_id):
-        verify_administrator(client)
-        state = client._read_installation(str(client._workspace()['key']))
-        if not state:
-            raise AidpProvisionConflict('Install this product before maintenance; no resources were created.')
-        _validate_journal(state)
-        _bindings(client, state, preserve_production=preserve_production)
+        state = _admit_maintenance(client, action, operation_id, preserve_production, llm_api_key)
         factory = native_factory or MarketPlaygroundClient
         result = _prepare_operation(client, state, action, operation_id, test_session_id, runtime_config,
                                     preserve_production, factory)

@@ -1,5 +1,6 @@
 """Validated deployment bindings; credentials remain external files."""
 import re
+from typing import Literal
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
@@ -14,6 +15,7 @@ class Settings(BaseModel):
     objectstorage_namespace: str
     artifacts_bucket_name: str
     agent_model_id: str
+    llm_auth_mode: Literal['oci_iam', 'openai'] = 'oci_iam'
     identity_domain_id: str
     admin_user_ocid: str
 

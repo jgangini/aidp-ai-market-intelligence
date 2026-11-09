@@ -1,6 +1,12 @@
 """Structured model calls with bounded data and injected decision instructions."""
 
 import json
+import asyncio
+import copy
+
+import httpx
+
+from .config import OPENAI_MODE, llm_auth_mode, validate_api_key, validate_llm_binding
 from hashlib import sha256
 from itertools import zip_longest
 from .decisions import PROMPTS
@@ -207,3 +213,121 @@ class DecisionModel:
         ).ainvoke(
             [SystemMessage(content=self.prompts[name]), HumanMessage(content=data)]
         )
+
+
+MAX_RESPONSE_BYTES = 1024 * 1024
+
+
+class OpenAIModelError(RuntimeError):
+    def __init__(self, status):
+        self.status = status
+        super().__init__(f"OpenAI API key inference returned HTTP {status}")
+
+
+class OpenAIModel:
+    def __init__(self, binding, api_key, *, max_tokens=6000):
+        if llm_auth_mode(binding) != OPENAI_MODE:
+            raise ValueError("An explicit OpenAI API key connection is required")
+        validate_llm_binding(binding)
+        self._api_key = validate_api_key(api_key)
+        self.endpoint = binding["model_endpoint"].rstrip("/") + "/chat/completions"
+        self.model_id = binding["model_id"]
+        self.max_tokens = max_tokens
+
+    def complete(self, system, question, schema, *, request_id=None, on_response=None, on_completion=None):
+        payload = {
+            "model": self.model_id,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": question}],
+            "max_completion_tokens": self.max_tokens,
+            "store": False,
+            "stream": False,
+            "response_format": {"type": "json_schema", "json_schema": {
+                "name": "ai_mi_decision", "strict": True, "schema": openai_schema(schema),
+            }},
+        }
+        headers = {"Authorization": "Bearer " + self._api_key}
+        if request_id:
+            headers["X-Client-Request-Id"] = request_id
+        # No transport retries or redirects: each submission belongs to its caller's ledger.
+        try:
+            with httpx.Client(timeout=httpx.Timeout(120, connect=10), follow_redirects=False,
+                              trust_env=False) as client:
+                with client.stream("POST", self.endpoint, json=payload, headers=headers) as response:
+                    if response.status_code != 200:
+                        raise OpenAIModelError(response.status_code)
+                    body = bytearray()
+                    for chunk in response.iter_bytes():
+                        body.extend(chunk)
+                        if len(body) > MAX_RESPONSE_BYTES:
+                            raise ValueError("OpenAI model response exceeds the admitted size")
+                    if on_response:
+                        on_response(response.headers.get("x-request-id"))
+        except httpx.TimeoutException:
+            raise TimeoutError("OpenAI API key inference timed out; usage is uncertain") from None
+        except httpx.RequestError:
+            raise RuntimeError("OpenAI API key inference transport failed; usage is uncertain") from None
+        text = completion_text(body)
+        if on_completion:
+            usage = json.loads(body).get("usage", {})
+            return on_completion(text, usage if isinstance(usage, dict) else {})
+        return text
+
+    def with_structured_output(self, schema, method):
+        if method != "json_schema":
+            raise ValueError("Only structured JSON schema decisions are supported")
+        parent = self
+
+        class Bound:
+            async def ainvoke(self, messages):
+                if len(messages) != 2 or [message.type for message in messages] != ["system", "human"]:
+                    raise ValueError("Unexpected production decision message contract")
+                raw = await asyncio.to_thread(parent.complete, messages[0].content, messages[1].content, schema)
+                return json.loads(raw)
+
+        return Bound()
+
+
+def completion_text(body):
+    try:
+        data = json.loads(body)
+        choices = data["choices"]
+        if not isinstance(choices, list) or len(choices) != 1:
+            raise ValueError
+        choice = choices[0]
+        message = choice["message"]
+        if (choice["finish_reason"] != "stop" or message.get("role") != "assistant" or message.get("refusal")
+                or message.get("tool_calls") or message.get("function_call")):
+            raise ValueError
+        text = message["content"]
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError
+        parsed = json.loads(text, parse_constant=reject_nonfinite)
+        if not isinstance(parsed, dict):
+            raise ValueError
+        return text
+    except (ValueError, TypeError, KeyError, IndexError):
+        raise ValueError("OpenAI model did not return one complete structured decision") from None
+
+
+def reject_nonfinite(value):
+    raise ValueError("Nonfinite JSON number")
+
+
+def openai_schema(schema):
+    """Adapt generation constraints; the workflow still validates its original contract."""
+    result = copy.deepcopy(schema)
+    for key in ("default", "uniqueItems", "minLength", "maxLength"):
+        result.pop(key, None)
+    if "const" in result:
+        result["enum"] = [result.pop("const")]
+    for key in ("properties", "$defs"):
+        if key in result:
+            result[key] = {name: openai_schema(child) for name, child in result[key].items()}
+    if result.get("type") == "object":
+        result["required"] = list(result.get("properties", {}))
+        result["additionalProperties"] = False
+    if isinstance(result.get("items"), dict):
+        result["items"] = openai_schema(result["items"])
+    if "anyOf" in result:
+        result["anyOf"] = [openai_schema(child) for child in result["anyOf"]]
+    return result

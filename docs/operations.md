@@ -42,7 +42,7 @@ Los recibos del plugin y del instalador conservan su procedencia. Una respuesta 
 
 ## Activar investigación
 
-`activate-test` recibe `--research-binding`, settings privados, UUID y `--apply`. Reutiliza respaldo, lock, journal, refresco y rollback. No crea compute, credenciales o sesiones ni exige exportar el token ya instalado.
+`activate-test` recibe `--research-binding`, settings privados, UUID y `--apply`. Reutiliza respaldo, lock, journal, refresco y rollback. No crea compute ni sesiones ni exige exportar el token Apify instalado. Al seleccionar OpenAI por primera vez, recibe `--llm-api-key-file` para crear su credencial independiente; las activaciones posteriores reutilizan esa referencia.
 
 El binding debe conservar identidad, Credential Store, modelo, región/compartimento, almacenamiento y generación. Fuentes, idioma, guardrails y perfil observado del runtime son explícitos. `candidate_revision` selecciona el hash del paquete canónico. Un binding distinto no puede reanudar la misma operación; una respuesta incierta no declara activación.
 

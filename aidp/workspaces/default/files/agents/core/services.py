@@ -7,6 +7,7 @@ from pathlib import Path
 from . import APIFY_CREDENTIAL_NAME
 from .model import DecisionModel
 from .provider import ApifyProvider
+from .config import OPENAI_MODE, LLM_CREDENTIAL_NAME, LLM_SECRET_KEY, llm_auth_mode
 from .runtime_versions import (
     TARGET_GRAPH_PACKAGES,
     exact_runtime_comparison,
@@ -90,8 +91,11 @@ def build_market_services(config):
         },
         "guardrails_config": config["guardrails_config"],
     }
-    model = DecisionModel(
-        GenAIChatInvoker(
+    if llm_auth_mode(config) == OPENAI_MODE:
+        from .model import OpenAIModel
+        llm = OpenAIModel(config, aidputils.secrets.get(name=LLM_CREDENTIAL_NAME, key=LLM_SECRET_KEY))
+    else:
+        llm = GenAIChatInvoker(
             provider="generic",
             auth_type="API_KEY",
             client=GenerativeAiInferenceV2Client(
@@ -102,7 +106,7 @@ def build_market_services(config):
             service_endpoint=config["model_endpoint"],
             **settings,
         )
-    )
+    model = DecisionModel(llm)
     return {
         "storage": storage,
         "model": model,
