@@ -85,7 +85,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/actor_profiles.py",
-      "sha256": "a6f5cddaee528a24644f874f624c1490d91a06e9b68aa8fb5cec5c63c27cfee9"
+      "sha256": "f99c7f314629a67018b76e5640fb6c5554ffe67a9c7d33e71b875d61e7ca2364"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/actor_tools.py",
@@ -121,7 +121,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/decisions/research.py",
-      "sha256": "18e086cacffe7514a205c328bb245a974ebaab6ff133fe7fefb9ccecaedfe170"
+      "sha256": "2ff734be8bbcf1c71740650bfae4d43ec1ce4065329bb910d3683c03c3de7d0b"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/decisions/understand.py",
@@ -262,5 +262,5 @@
       "sha256": "02d8ebfd9f19dd08b7c1b47e22137899f29fc525e208cdb88c285492e21ad477"
     }
   ],
-  "pack_sha256": "a54f8304ff18a8f146c7183ebecce396c2ec3024f16d1e9e589920d941a597ff"
+  "pack_sha256": "d9d4c92dadfdf2ac6e4c0ef864fa565e85eb08f91e68ac1acaa671b035d20c51"
 }

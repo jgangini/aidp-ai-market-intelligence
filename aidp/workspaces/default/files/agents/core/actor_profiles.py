@@ -48,7 +48,8 @@ PROFILES = {
     "x_search": {
         "actor": "apidojo/twitter-scraper-lite",
         "actor_id": "nfp1fpt5gUlBwPcor",
-        "build": "0.0.1057",
+        "build": "0.0.1056",
+        "build_id": "XaXWolZVfFZprLlVD",
         "platform": "x",
         "operation": "topic_search",
         "pricing": "event",

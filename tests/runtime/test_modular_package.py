@@ -121,7 +121,7 @@ def test_prompt_inventory_preserves_unchanged_text_and_reviewed_research_revisio
         market_select_sources='58896d15b6add9bef378ef50959ebe0f0221cec0779de82051f2245e86f2db9d',
         market_understand='ab4fab90b6068f404ec006d99fffb8f6dfa0fcc3c2f477a485f2fc85e44b0db0',
         market_plan='a74a53493bb3ab35f61c724a232a204acd61d309003444ff195f67920380e8df',
-        market_analyze='8b2aa0a9b85272a62bd84301f04879076e4e96e0f3ade0664d9a667f734530c4',
+        market_analyze='98b54c1b0d7280c331a704438a3eb1c3ab7c211e6ea1e4b1b10e994b22592db2',
         market_draft='f6aee433309455e010f611ae828e17d4cfaa246c75100e7d9b1ee86f1c0088ea',
         market_consolidate='0b1aad9efa2dff4be246917aee7e7ab7f28537a5ab06ee54b721d0a8419ae6f9',
         # Reviewed distinction between shared predicates and thematic aggregation.

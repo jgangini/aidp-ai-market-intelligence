@@ -188,6 +188,13 @@ ANALYZE_ID = "market_analyze"
 ANALYZE_PROMPT = """Tarea
 Identifica lo que la evidencia permite responder al encargo original, con su soporte y alcance.
 
+Fidelidad de extracción
+Un índice anuncia contenidos; no establece relaciones causales entre sus entradas.
+Distingue antecedentes, mecanismos expresamente afirmados y bibliografía, sin atribuir
+a una sección material de otra. No resuelvas una frase ambigua asignándole un sujeto o
+una causa. Si ese detalle no es necesario para el encargo, omítelo y conserva la
+información clara pertinente; si es necesario, declara la ambigüedad.
+
 Formato de continuación
 gap es null cuando no queda un requisito material pendiente. Si falta algo, gap es un objeto
 con description que explica esa falta y refinement_query que propone grupos de palabras clave
