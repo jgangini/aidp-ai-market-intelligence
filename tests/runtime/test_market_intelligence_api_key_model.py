@@ -143,6 +143,33 @@ def test_openai_schema_handles_field_names_and_constants_without_mutation():
     assert original["properties"]["default"]["const"] is False
 
 
+@pytest.mark.parametrize("length", [0, 500, 501, 585])
+def test_openai_planning_request_preserves_domain_length_contract(transport, length):
+    from jsonschema import Draft202012Validator
+    from ai_market_intelligence.runtime import decisions
+    from ai_market_intelligence.runtime.research_contracts import MarketPlan
+
+    contract = MarketPlan.model_json_schema()
+    decisions.configure_contract("market_plan", contract, {"enabled_sources": ["web"]})
+    original = copy.deepcopy(contract)
+    calls = transport([httpx.Response(200, json=result())])
+    api_key_model.OpenAIModel(binding()["services"], FAKE_KEY).complete("system", "question", contract)
+    generated = json.loads(calls[0].content)["response_format"]["json_schema"]["schema"]
+    plan = {"tasks": [{"task_id": "web_fixture", "source": "web", "role": "market_analysis",
+        "query": {"groups": [["Fixture"]]}, "urls": [], "purpose": "a" * length}]}
+    errors = list(Draft202012Validator(generated).iter_errors(plan))
+    normalized = decisions.normalize_result("market_plan", plan, {}, contract)
+    assert bool(errors) == (length != 500)
+    if length == 500:
+        assert MarketPlan.model_validate(normalized).tasks[0].purpose == "a" * length
+    else:
+        with pytest.raises(ValueError):
+            MarketPlan.model_validate(normalized)
+    assert contract == original
+    keywords = generated["$defs"]["MarketTask"]["properties"]["query"]["properties"]["groups"]["items"]["items"]
+    assert keywords["minLength"] == 1 and keywords["maxLength"] == 40
+
+
 @pytest.mark.parametrize("status", [301, 401, 403, 429, 500])
 def test_status_is_safe_and_transport_never_retries_or_follows_redirect(transport, status):
     calls = transport([httpx.Response(status, text=FAKE_KEY, headers={"location": "https://example.com"})])

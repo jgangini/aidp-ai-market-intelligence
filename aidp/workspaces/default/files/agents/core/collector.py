@@ -2,6 +2,10 @@
 
 import asyncio
 import copy
+import re
+import unicodedata
+from math import ceil
+from time import monotonic
 import httpx
 from urllib.parse import urlsplit
 
@@ -10,6 +14,7 @@ from .media import media_limitations
 from .runtime_core import (
     ConnectorUnavailable,
     ProviderReceiptUnverified,
+    ProviderResponseInvalid,
     ProviderResultUnavailable,
     ProviderStartRejected,
     ProviderStartResponseError,
@@ -18,6 +23,7 @@ from .runtime_core import (
     public_url,
 )
 from .social import social_url, social_destination_identity
+from .social_search import comment_parent_url
 from .research_contracts import MarketCollection, MarketEvidence, market_moment
 from .documents import market_document_links, market_fetch_pdf
 from .passages import market_project_passages
@@ -51,6 +57,126 @@ def market_publication_matches(source, brief, published):
     return market_moment(brief["start"]) <= moment <= market_moment(brief["end"])
 
 
+def _social_words(value):
+    normalized = unicodedata.normalize("NFKD", value).casefold()
+    return re.findall(r"[a-z0-9]+", "".join(c for c in normalized if not unicodedata.combining(c)))
+
+
+def _social_hashtag(task, brief):
+    for value in (brief.get("entity", ""), task["query"]):
+        words = _social_words(value)
+        slug = "".join(words)
+        if 1 <= len(words) <= 3 and 4 <= len(slug) <= 80 and not slug.isdigit():
+            return slug
+    return None
+
+
+def _social_operation_key(profile, brief, target, limit):
+    return profile + "-" + digest([target, brief["start"], brief["end"], limit])
+
+
+def _merge_social_captures(key, captures):
+    evidence = {}
+    for capture in captures:
+        for item in capture["evidence"]:
+            identity = (item["content_basis"], item["url"])
+            evidence.setdefault(identity, item)
+    limits = list(dict.fromkeys(text for c in captures for text in c["limitations"]))
+    states = {c["status"] for c in captures}
+    if "pending" in states:
+        status = "pending"
+    elif states == {"unavailable"}:
+        status = "unavailable"
+    else:
+        status = "partial" if states != {"complete"} or not evidence else "complete"
+    return MarketCollection(status=status, evidence=list(evidence.values())[:50],
+                            limitations=limits[:12], operation_id=key).model_dump(mode="json")
+
+
+def _comment_result(result, source, parent):
+    if result is None:
+        return None
+    admitted = []
+    for row in result["items"]:
+        provenance = row.get("provenance") or {}
+        try:
+            belongs = comment_parent_url(provenance.get("requested_url"), source) == parent
+        except (TypeError, ValueError):
+            belongs = False
+        if belongs and provenance.get("content_basis") == "comment_text":
+            admitted.append(row)
+    coverage = dict(result.get("coverage") or {})
+    if len(admitted) != len(result["items"]):
+        coverage["failed_pages"] = [*coverage.get("failed_pages", []), {"reason": "unapproved_comment_parent"}]
+    return {**result, "items": admitted, "coverage": coverage}
+
+
+async def _capture_social(collector, key, source, profile, brief, *, parent=None, **parameters):
+    try:
+        result, receipt = await collector.invoke_tool(key, profile, brief, **parameters)
+    except ConnectorUnavailable as error:
+        return MarketCollection(status="unavailable", evidence=[], limitations=[str(error)],
+                                operation_id=key).model_dump(mode="json"), []
+    except Exception:
+        saved = collector.effects.operation(key)
+        if saved is None or saved["state"] != "uncertain" or saved.get("receipt") is not None:
+            raise
+        result, receipt = None, None
+    if parent is not None:
+        result = _comment_result(result, source, parent)
+    collection = collector.collection(source, source, key, result, receipt, brief)
+    return collection, (result or {}).get("items", [])
+
+
+def _comment_targets(rows, evidence, source, task, brief):
+    admitted = {item["url"] for item in evidence if item["published_at"] is not None}
+    subject = _social_words(brief.get("entity") or task["query"])
+    if not subject:
+        return []
+    candidates = {}
+    for row in rows:
+        count = (row.get("metrics") or {}).get("comments")
+        if row["url"] not in admitted or type(count) is not int or count <= 0:
+            continue
+        provenance = row.get("provenance") or {}
+        words = set(_social_words(row["text"] + " " + str(provenance.get("channel_name") or "")))
+        if not set(subject).issubset(words):
+            continue
+        try:
+            target = comment_parent_url(row["url"], source)
+        except ValueError:
+            continue
+        candidates[target] = count
+    return sorted(candidates, key=lambda url: (-candidates[url], url))[:2]
+
+
+async def _collect_social_topics(collector, key, task, brief):
+    source = task["source"]
+    hashtag = _social_hashtag(task, brief) if source == "instagram" else None
+    plans = [(key + "-search", source + "_search", task["query"], 10 if hashtag else 20)]
+    if hashtag:
+        plans.append((_social_operation_key("instagram_hashtag", brief, hashtag, 10), "instagram_hashtag", hashtag, 10))
+    captures, posts = [], []
+    for operation, profile, query, limit in plans:
+        capture, rows = await _capture_social(collector, operation, source, profile, brief,
+                                       query=query, max_items=limit)
+        captures.append(capture)
+        posts.extend(rows)
+        if capture["status"] in {"pending", "unavailable"}:
+            return _merge_social_captures(key, captures)
+    result = _merge_social_captures(key, captures)
+    targets = _comment_targets(posts, result["evidence"], source, task, brief)
+    for target in targets:
+        operation = _social_operation_key(source + "_comments", brief, target, 5)
+        capture, _ = await _capture_social(collector, operation, source,
+                                    source + "_comments", brief, parent=target,
+                                    urls=[target], max_items=5)
+        captures.append(capture)
+        if capture["status"] == "pending":
+            break
+    return _merge_social_captures(key, captures)
+
+
 class MarketCollector:
     def __init__(
         self,
@@ -60,13 +186,14 @@ class MarketCollector:
         explicit_urls=(),
         search_context=None,
         financial_selections=None,
-        poll_attempts=12,
+        poll_attempts=None,
         poll_seconds=5,
     ):
         if (
-            type(poll_attempts) is not int
-            or not 1 <= poll_attempts <= 24
+            poll_attempts is not None
+            and (type(poll_attempts) is not int or not 1 <= poll_attempts <= 24)
             or not 0 <= poll_seconds <= 10
+            or poll_attempts is None and poll_seconds < 1
         ):
             raise ValueError("Provider polling requires finite bounds")
         self.provider, self.effects = provider, effects
@@ -122,8 +249,10 @@ class MarketCollector:
                     result={"diagnostic": error.diagnostic},
                 )
                 raise
-            except BaseException:
-                self.effects.update(key, admitted["claim"], state="uncertain")
+            except BaseException as error:
+                self.effects.update(key, admitted["claim"], state="uncertain", result={
+                    "diagnostic": {"stage": "provider_start", "error_type": type(error).__name__}
+                })
                 raise
             self.effects.update(
                 key, admitted["claim"], state="running", receipt=receipt
@@ -131,17 +260,21 @@ class MarketCollector:
         return await self.finish(key, admitted["claim"], receipt, call)
 
     async def finish(self, key, token, receipt, call):
-        for attempt in range(self.poll_attempts):
-            try:
-                current = await self.provider.read(receipt["runId"])
-            except (ProviderReceiptUnverified, ProviderStatusUnavailable):
-                return None, receipt
-            if current["runId"] != receipt["runId"]:
-                raise ValueError(
-                    "The provider returned a receipt for another admitted run"
-                )
+        attempts, deadline = self.polling_window(call)
+        for attempt in range(attempts):
+            if attempt:
+                remaining = deadline - monotonic()
+                if remaining <= 0:
+                    break
+                await asyncio.sleep(min(self.poll_seconds, remaining))
+            current = await self.read_capture(key, token, receipt, attempt)
+            if current is None:
+                continue
             receipt = current
-            self.effects.update(key, token, state="running", receipt=receipt)
+            saved_result = self.effects.operation(key).get("result") or {}
+            diagnostic = saved_result.get("diagnostic")
+            self.effects.update(key, token, state="running", receipt=receipt,
+                                result={"diagnostic": diagnostic} if diagnostic else None)
             if receipt["status"] == "SUCCEEDED":
                 if not receipt.get("datasetId"):
                     return None, receipt
@@ -162,29 +295,66 @@ class MarketCollector:
                             "provider_result_error": code,
                         },
                     }
-                    self.effects.update(
-                        key, token, state="completed", receipt=receipt, result=result
-                    )
+                    result = self.complete_capture(key, token, receipt, result)
                     return result, receipt
                 if observation.cost != receipt["spent_microusd"]:
                     return None, receipt
                 result = {"items": observation.items, "coverage": observation.coverage}
-                self.effects.update(
-                    key, token, state="completed", receipt=receipt, result=result
-                )
+                result = self.complete_capture(key, token, receipt, result)
                 return result, receipt
             if receipt["status"] not in {"READY", "RUNNING"}:
                 result = {
                     "items": [],
                     "coverage": {"provider_terminal_status": receipt["status"]},
                 }
-                self.effects.update(
-                    key, token, state="completed", receipt=receipt, result=result
-                )
+                result = self.complete_capture(key, token, receipt, result)
                 return result, receipt
-            if attempt + 1 < self.poll_attempts:
-                await asyncio.sleep(self.poll_seconds)
         return None, receipt
+
+    async def read_capture(self, key, token, receipt, attempt):
+        try:
+            current = await self.provider.read(receipt["runId"])
+            if current["runId"] != receipt["runId"]:
+                raise ValueError("The provider returned a receipt for another admitted run")
+            return current
+        except Exception as error:
+            retryable = isinstance(error, (ProviderReceiptUnverified, ProviderStatusUnavailable))
+            diagnostic = {
+                "stage": "provider_read", "error_type": type(error).__name__,
+                "retryable": retryable, "attempt": attempt + 1,
+            }
+            if isinstance(error, ProviderResponseInvalid):
+                diagnostic.update(error.diagnostic)
+            elif isinstance(error, ProviderStatusUnavailable) and error.reason in {
+                "mcp_error_envelope", "sdk_status_invocation_failed",
+            }:
+                diagnostic["reason"] = error.reason
+                if error.reason == "sdk_status_invocation_failed":
+                    diagnostic.update(response_type="str", response_shape="text")
+            status = getattr(error, "status", None)
+            if type(status) is int and 400 <= status <= 599:
+                diagnostic["http_status"] = status
+            self.effects.update(key, token, state="running", receipt=receipt,
+                                result={"diagnostic": diagnostic})
+            if not retryable:
+                raise
+            return None
+
+    def complete_capture(self, key, token, receipt, result):
+        saved_result = self.effects.operation(key).get("result") or {}
+        if saved_result.get("diagnostic"):
+            result = {**result, "diagnostic": saved_result["diagnostic"]}
+        self.effects.update(key, token, state="completed", receipt=receipt, result=result)
+        return result
+
+    def polling_window(self, call):
+        if self.poll_attempts is not None:
+            return self.poll_attempts, float("inf")
+        timeout = call.get("callOptions", {}).get("timeout")
+        if type(timeout) is not int or not 1 <= timeout <= 1800:
+            raise ValueError("Automatic polling requires the admitted actor timeout")
+        budget = min(timeout + 15, 240)
+        return ceil(budget / self.poll_seconds) + 1, monotonic() + budget
 
     def tool_arguments(
         self,
@@ -195,10 +365,11 @@ class MarketCollector:
         urls=(),
         financial=None,
         search_mode="research",
+        max_items=20,
     ):
         tool = actor_tool(profile)
-        arguments = {"max_items": min(20, tool.maximum_items)}
-        if profile in {"website", "facebook_posts", "instagram_posts"}:
+        arguments = {"max_items": min(max_items, tool.maximum_items)}
+        if profile in {"website", "facebook_posts", "instagram_posts", "facebook_comments", "instagram_comments"}:
             arguments["urls"] = list(urls)
         elif profile not in {"world_bank", "yahoo_history"}:
             arguments["query"] = query
@@ -365,19 +536,10 @@ class MarketCollector:
                 raise ValueError(
                     "A model-proposed destination has no explicit or discovered authority"
                 )
-            if (
-                source in {"x", "youtube"}
-                or source == "facebook" and not task["urls"]
-            ):
-                result, receipt = await self.invoke_tool(
-                    operation_key + "-search",
-                    source + "_search",
-                    brief,
-                    query=task["query"],
-                )
-                return self.collection(
-                    source, source, operation_key, result, receipt, brief
-                )
+            if source in {"facebook", "instagram"} and not task["urls"]:
+                return await _collect_social_topics(self, operation_key, task, brief)
+            if source in {"x", "youtube"}:
+                return await self.collect_keyword(operation_key, task, brief)
             if source in {"market_data", "world_bank"}:
                 selection = self.financial_selections.get(source)
                 if selection is None:
@@ -403,6 +565,13 @@ class MarketCollector:
                 limitations=[str(error)],
                 operation_id=operation_key,
             ).model_dump(mode="json")
+
+    async def collect_keyword(self, key, task, brief):
+        source = task["source"]
+        result, receipt = await self.invoke_tool(
+            key + "-search", source + "_search", brief, query=task["query"]
+        )
+        return self.collection(source, source, key, result, receipt, brief)
 
     def explicit_targets_match(self, source, urls):
         if source not in {"facebook", "instagram"}:
@@ -495,7 +664,9 @@ class MarketCollector:
             discovered = search["items"]
         if not targets:
             raise ConnectorUnavailable(
-                "La búsqueda acotada no resolvió destinos públicos compatibles para esta fuente."
+                "El selector no eligió destinos pertinentes entre los resultados de la búsqueda."
+                if discovered else
+                "La búsqueda acotada no devolvió destinos públicos utilizables para esta fuente."
             )
         if source in {"web", "financial_document"}:
             pdf_candidates = {
@@ -1008,6 +1179,10 @@ class MarketCollector:
                     "El proveedor no pudo recuperar algunos destinos de Instagram; "
                     "se conservan las otras publicaciones verificables, sin inferir ausencia en la plataforma."
                 )
+            if coverage.get("unavailable_search_routes"):
+                limits.append(
+                    "El proveedor no recuperó algunas rutas de búsqueda social; se conservan las publicaciones obtenidas sin inferir ausencia en la plataforma."
+                )
         return MarketCollection(
             status="partial" if limits or not evidence else "complete",
             evidence=evidence,
@@ -1072,16 +1247,17 @@ class MarketCollector:
             limits.append(
                 "Referencias públicas por palabras clave con fechas diversas; no representan una ventana temporal ni la frecuencia de experiencias de todos los clientes."
             )
-        if provenance.get("search_mode") == "instagram_popular_reels":
-            limits.append(
-                "Muestra de reels populares encontrados por palabras clave; sólo se analizaron sus descripciones, no el video ni todos los posts de Instagram."
-            )
         if provenance.get("search_mode") in {
             "facebook_keyword_posts",
-            "instagram_popular_reels",
+            "instagram_keyword_posts",
+            "instagram_hashtag_posts",
         }:
             limits.append(
                 "El periodo solicitado se comprueba sobre las fechas recibidas; el buscador no garantiza cobertura completa ni orden cronológico."
+            )
+        if provenance.get("content_basis") == "comment_text":
+            limits.append(
+                "Comentario de su autor en una publicación seleccionada; no atribuirlo a la marca ni generalizarlo a todos sus clientes."
             )
         if provenance.get("text_truncated") is True:
             limits.append(

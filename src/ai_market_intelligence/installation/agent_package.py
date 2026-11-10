@@ -12,6 +12,7 @@ MODULES = (
     "media",
     "actor_profiles",
     "contracts",
+    "content_items",
     "finance",
     "serp",
     "social",

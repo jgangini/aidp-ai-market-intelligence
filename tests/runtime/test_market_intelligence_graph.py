@@ -195,11 +195,12 @@ def test_final_scope_is_state_owned_even_when_synthesis_omits_dates(mode,label):
     assert text.startswith('La muestra contiene reclamaciones atribuidas.')
     assert text.count(label)==1
     brief=store.read()[0]['brief']
-    assert f"{label}: {brief['start']} a {brief['end']}." in text
+    assert f"{label}: del " in text and ' UTC al ' in text
+    assert brief['start'] not in text and brief['end'] not in text
     assert all(call['brief']['start']==brief['start'] and call['brief']['end']==brief['end']
                for call in collector.calls)
     if mode=='conversation':
-        assert '2026-10-26T00:00:00+00:00 a 2026-11-02T23:59:59+00:00' in text
+        assert '26 de octubre de 2026, 00:00:00 UTC al 2 de noviembre de 2026, 23:59:59 UTC' in text
     source_names='Instagram, X' if mode=='conversation' else 'web'
     assert f'Fuentes con evidencia: {source_names}.' in text
     assert f'Evidencias recuperadas: {len(sources)}.' in text

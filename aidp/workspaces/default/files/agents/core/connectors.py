@@ -15,6 +15,10 @@ from .finance import compile_finance
 from .contracts import ROLLING_DAYS_PATTERN
 from .serp import compile_serp_input
 from .social import compile_social_input
+from .social_search import compile_comment_input
+
+
+FACEBOOK_QUERY_MAX_LENGTH = 100
 
 
 def require_available(profile_id):
@@ -162,6 +166,9 @@ def compile_call(
             "world_bank",
             "facebook_search",
             "instagram_search",
+            "instagram_hashtag",
+            "facebook_comments",
+            "instagram_comments",
         }
         and cap_microusd is None
     ):
@@ -237,8 +244,10 @@ def _source_input(
         inputs = compile_social_input(
             profile_id, args, approved_urls, start, end, limit
         )
-    elif profile_id in {"facebook_search", "instagram_search"}:
-        inputs = _social_search_input(profile_id, args, limit)
+    elif profile_id in {"facebook_search", "instagram_search", "instagram_hashtag"}:
+        inputs = _social_search_input(profile_id, args, limit, start, end)
+    elif profile_id in {"facebook_comments", "instagram_comments"}:
+        inputs = compile_comment_input(profile_id, args, approved_urls, start, limit)
     elif profile_id == "website":
         if not usage_cost_verified:
             raise ConnectorUnavailable(
@@ -248,26 +257,22 @@ def _source_input(
     return inputs
 
 
-def _social_search_input(profile_id, args, limit):
+def _social_search_input(profile_id, args, limit, start, end):
     query = _public_search_query(args)
     if "," in query or re.search(r"(?<!\w)(?:OR|AND|NOT)(?!\w)", query):
-        raise ProviderQueryRejected(
-            "This source accepts one keyword phrase without Boolean operators"
-        )
+        raise ProviderQueryRejected("This source accepts one keyword phrase without Boolean operators")
     if profile_id == "facebook_search":
-        return {
-            "categories": [query],
-            "locations": [],
-            "searchType": "posts",
-            "resultsLimit": limit,
-        }
-    return {
-        "search": query,
-        "searchType": "popular",
-        "searchLimit": limit,
-        "liveSearch": True,
-        "enhanceUserSearchWithFacebookPage": False,
-    }
+        if len(query) > FACEBOOK_QUERY_MAX_LENGTH:
+            raise ProviderQueryRejected(
+                f"Facebook search accepts at most {FACEBOOK_QUERY_MAX_LENGTH} characters"
+            )
+        return {"query": query, "searchType": "latest", "resultsCount": limit,
+                "startDate": start.date().isoformat(), "endDate": end.date().isoformat()}
+    hashtag = profile_id == "instagram_hashtag"
+    if hashtag and not re.fullmatch(r"[\w]{1,100}", query):
+        raise ProviderQueryRejected("Instagram hashtag search requires one plain hashtag slug")
+    return {"hashtags": [query], "keywordSearch": not hashtag,
+            "resultsType": "posts", "resultsLimit": limit}
 
 
 def _call_options(profile_id, limit, cap_microusd):

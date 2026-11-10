@@ -170,13 +170,13 @@ def test_media_only_social_post_retains_permalink_without_inventing_a_caption():
 
     from ai_market_intelligence.runtime.social_search import _social_search_observation
 
-    call={'actor':'apify/instagram-search-scraper','callOptions':{'build':'0.1.561'}}
+    call={'actor':'apify/instagram-hashtag-scraper','callOptions':{'build':'0.0.727'}}
 
     row={'url':'https://instagram.com/p/ABCDE1','videoUrl':SIGNED}
 
     result=_social_search_observation(row,call,{'runId':'run'},'instagram',None,
 
-        '2026-11-01T00:00:00Z',{},'instagram_popular_reels')
+        '2026-11-01T00:00:00Z',{},'instagram_keyword_posts')
 
     assert result['provenance']['content_basis']=='media_metadata'
 
@@ -188,7 +188,11 @@ def test_media_only_social_post_retains_permalink_without_inventing_a_caption():
 
 
 
-def test_facebook_pages_existing_dataset_with_overflow_detection_and_no_capture():
+@pytest.mark.parametrize('actor,limit_field,media_field', [
+    ('apify/facebook-posts-scraper','resultsLimit','media'),
+    ('scraper_one/facebook-posts-search','resultsCount','attachments'),
+])
+def test_facebook_pages_existing_dataset_with_overflow_detection_and_no_capture(actor,limit_field,media_field):
 
     class Dataset:
 
@@ -206,7 +210,7 @@ def test_facebook_pages_existing_dataset_with_overflow_detection_and_no_capture(
 
     provider=ApifyProvider({name:dataset for name in ('call-actor','get-actor-run','get-dataset-items')})
 
-    call={'actor':'apify/facebook-search-scraper','callOptions':{'maxItems':6},'input':{'resultsLimit':6}}
+    call={'actor':actor,'callOptions':{'maxItems':6},'input':{limit_field:6}}
 
     arguments=_provider_dataset_arguments({'datasetId':'dataset'},call)
 
@@ -216,7 +220,7 @@ def test_facebook_pages_existing_dataset_with_overflow_detection_and_no_capture(
 
     assert [(a['offset'],a['limit']) for a in dataset.calls]==[(0,3),(3,3),(6,1)]
 
-    assert all(a['datasetId']=='dataset' and 'media' in a['fields'].split(',') for a in dataset.calls)
+    assert all(a['datasetId']=='dataset' and media_field in a['fields'].split(',') for a in dataset.calls)
 
 
 

@@ -361,3 +361,68 @@ def test_structured_receipt_cannot_hide_an_error_in_sibling_or_nested_protocol_c
     with pytest.raises(ProviderStatusUnavailable):
 
         asyncio.run(client.read('existing-run'))
+
+
+def test_exact_sdk_status_failure_prefix_is_retryable_without_recording_message():
+    raw = "MCP tool 'get-actor-run' invocation failed: secret provider response"
+    client, tools = provider(raw)
+    with pytest.raises(ProviderStatusUnavailable) as raised:
+        asyncio.run(client.read('existing-run'))
+    assert raised.value.reason == 'sdk_status_invocation_failed'
+    assert 'secret provider response' not in str(raised.value)
+    assert len(tools['get-actor-run'].calls) == 1 and not tools['call-actor'].calls
+
+
+@pytest.mark.parametrize('raw', [
+    " MCP tool 'get-actor-run' invocation failed: failure",
+    "MCP tool 'call-actor' invocation failed: failure",
+    "MCP tool 'get-dataset-items' invocation failed: failure",
+    "MCP tool 'get-actor-run' invocation failed without exact separator",
+    'unknown response',
+])
+def test_other_text_is_not_reclassified_as_a_retryable_status_failure(raw):
+    from ai_market_intelligence.runtime.runtime_core import ProviderResponseInvalid
+
+    client, tools = provider(raw)
+    with pytest.raises(ProviderResponseInvalid) as raised:
+        asyncio.run(client.read('existing-run'))
+    assert raised.value.diagnostic == {
+        'reason': 'missing_run_receipt', 'response_type': 'str', 'response_shape': 'text',
+        'record_count': 0, 'match_count': 0,
+    }
+    assert not tools['call-actor'].calls
+
+
+@pytest.mark.parametrize('raw,reason,count,matches,status', [
+    ({'runId': 'foreign-run', 'status': 'RUNNING'}, 'unexpected_run_identity', 1, 0, 'RUNNING'),
+    ([{'runId': 'existing-run', 'status': 'RUNNING'}] * 2, 'ambiguous_run_receipt', 2, 2, None),
+    ({'runId': 'existing-run', 'status': 'private unrecognized value'}, 'missing_run_receipt', 0, 0, 'unrecognized'),
+    ({'runId': 'existing-run', 'status': 'ABORTING'}, 'missing_run_receipt', 0, 0, 'unrecognized'),
+    ({'runId': 'existing-run', 'status': 'TIMING-OUT'}, 'missing_run_receipt', 0, 0, 'unrecognized'),
+])
+def test_receipt_validation_has_safe_reason_and_shape_without_accepting_invalid_runs(raw, reason, count, matches, status):
+    from ai_market_intelligence.runtime.runtime_core import ProviderResponseInvalid
+
+    client, _ = provider(raw)
+    with pytest.raises(ProviderResponseInvalid) as raised:
+        asyncio.run(client.read('existing-run'))
+    diagnostic = raised.value.diagnostic
+    assert diagnostic['reason'] == reason
+    assert diagnostic['record_count'] == count and diagnostic['match_count'] == matches
+    assert diagnostic.get('provider_status') == status
+    assert 'private unrecognized value' not in json.dumps(diagnostic)
+
+
+def test_conflicting_metadata_and_malformed_envelope_remain_fatal_with_reason():
+    from ai_market_intelligence.runtime.runtime_core import ProviderResponseInvalid
+
+    for raw, reason in [
+        ({'structuredContent': RUN, '_meta': {}, 'meta': {'secret': 'private value'}}, 'conflicting_mcp_metadata'),
+        ({'content': 'private invalid content'}, 'invalid_mcp_envelope'),
+    ]:
+        client, _ = provider(raw)
+        with pytest.raises(ProviderResponseInvalid) as raised:
+            asyncio.run(client.read('existing-run'))
+        assert raised.value.diagnostic['reason'] == reason
+        assert raised.value.diagnostic['response_type'] == 'dict'
+        assert 'private' not in json.dumps(raised.value.diagnostic)

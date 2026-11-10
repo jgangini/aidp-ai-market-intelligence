@@ -1,6 +1,6 @@
 """One bounded ScraperLink SERP page; snippets never stand in for page reads."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 import re
 import unicodedata
@@ -13,6 +13,12 @@ SERP_ACTOR = "scraperlink/google-search-results-serp-scraper"
 SERP_LANGUAGES = frozenset(
     "af ar hy be bg ca zh-CN zh-TW hr cs da nl en eo et tl fi fr de el iw hi hu is id it ja ko lv lt no fa pl pt ro ru sr sk sl es sw sv th tr uk vi".split()
 )
+
+
+def _calendar_query_suffix(start, end):
+    lower = start - timedelta(days=1)
+    upper = end + timedelta(days=1)
+    return f" after:{lower:%Y-%m-%d} before:{upper:%Y-%m-%d}"
 
 
 def compile_serp_input(localized):
@@ -33,12 +39,27 @@ def compile_serp_input(localized):
         "hl": language,
     }
     if "dateFrom" in localized:
+        # Keep calendar discovery broad; publication timestamps are checked after reading.
         start, end = (
-            datetime.strptime(localized[key], "%Y-%m-%d").strftime("%m/%d/%Y")
+            datetime.strptime(localized[key], "%Y-%m-%d")
             for key in ("dateFrom", "dateTo")
         )
-        result["tbs"] = f"cdr:1,cd_min:{start},cd_max:{end}"
+        result["keyword"] += _calendar_query_suffix(start, end)
+        result["tbs"] = f"cdr:1,cd_min:{start:%m/%d/%Y},cd_max:{end:%m/%d/%Y}"
     return result
+
+
+def _topic_query(call):
+    keyword = call["input"]["keyword"]
+    dates = re.fullmatch(
+        r"cdr:1,cd_min:(\d{2}/\d{2}/\d{4}),cd_max:(\d{2}/\d{2}/\d{4})",
+        call["input"].get("tbs", ""),
+    )
+    if dates:
+        suffix = _calendar_query_suffix(*(datetime.strptime(d, "%m/%d/%Y") for d in dates.groups()))
+        if keyword.endswith(suffix):
+            return keyword[:-len(suffix)]
+    return keyword
 
 
 def _serp_page(rows, call):
@@ -73,11 +94,10 @@ def serp_query(page, requested, tbs=None):
         r"cdr:1,cd_min:(\d{2}/\d{2}/\d{4}),cd_max:(\d{2}/\d{2}/\d{4})", tbs or ""
     )
     if date_filter:
-        suffix = " after:" + datetime.strptime(date_filter[1], "%m/%d/%Y").strftime(
-            "%Y-%m-%d"
-        )
-        if isinstance(effective, str) and effective.endswith(suffix):
-            effective = effective[: -len(suffix)]
+        for operator, value in (("before", date_filter[2]), ("after", date_filter[1])):
+            suffix = f" {operator}:" + datetime.strptime(value, "%m/%d/%Y").strftime("%Y-%m-%d")
+            if isinstance(effective, str) and effective.endswith(suffix):
+                effective = effective[: -len(suffix)]
     if effective == requested:
         return effective
     related = page.get("related_keywords")
@@ -97,6 +117,8 @@ def serp_query(page, requested, tbs=None):
         or not 1 <= len(effective) <= 500
         or not isinstance(suggestion, str)
         or normalize(suggestion) != normalize(effective)
+        or re.findall(r"\b(?:after|before):\S+", effective, re.I)
+        != re.findall(r"\b(?:after|before):\S+", requested, re.I)
         or SequenceMatcher(None, normalize(requested), normalize(effective)).ratio()
         < 0.94
     ):
@@ -164,7 +186,7 @@ def serp_observations(rows, run_id, call):
         "source": SERP_ACTOR,
         "actor_build": call["callOptions"]["build"],
         "provider_run_id": run_id,
-        "query": call["input"]["keyword"],
+        "query": _topic_query(call),
         "effective_query": page["search_term"],
         "query_correction": base_query != call["input"]["keyword"],
         "request_arguments_hash": digest(call),

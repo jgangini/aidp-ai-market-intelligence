@@ -153,7 +153,7 @@ def test_native_market_full_graph_preserves_source_role_artifacts_and_cached_del
 
     assert packets[-1]['response']['artifacts'][0]['kind']=='bar'
     assert len(provider.starts)==3 and calls[0]=='pre_invoke_setup'
-    assert [call['actor'] for call in provider.starts]==['apify/facebook-search-scraper','scraperlink/google-search-results-serp-scraper','apify/instagram-post-scraper']
+    assert [call['actor'] for call in provider.starts]==['scraper_one/facebook-posts-search','apify/instagram-hashtag-scraper','apify/instagram-hashtag-scraper']
     assert calls[-1]==('post_tool_setup','fixture-context-token')
     previous_calls=list(model.calls)
     repeated=market_native_turn(runtime)
@@ -533,8 +533,8 @@ def test_chat_projection_preserves_artifact_units_and_escapes_markdown_cells():
 
 
 @pytest.mark.parametrize('gate_actor,expected,started',[
-    ('apify/facebook-search-scraper','**facebook**',0),
-    ('scraperlink/google-search-results-serp-scraper','Avance de facebook',1),
+    ('scraper_one/facebook-posts-search','**facebook**',0),
+    ('apify/instagram-hashtag-scraper','Avance de facebook',1),
 ])
 def test_native_plain_chat_streams_before_the_blocked_tool_completes(tmp_path,monkeypatch,gate_actor,expected,started):
     runtime,_,model,provider,_=market_native_fixture(tmp_path,monkeypatch)
@@ -564,7 +564,7 @@ def test_native_plain_chat_streams_before_the_blocked_tool_completes(tmp_path,mo
             assert not release.is_set()
             assert all(call['actor']!=gate_actor for call in provider.starts)
             if started:
-                assert any(call['actor']=='apify/facebook-search-scraper' for call in provider.starts)
+                assert any(call['actor']=='scraper_one/facebook-posts-search' for call in provider.starts)
                 assert 'market_verify' in model.calls
                 assert any('sujeto a revisión final' in message.content for message in messages)
             release.set()

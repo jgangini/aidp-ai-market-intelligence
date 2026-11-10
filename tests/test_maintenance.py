@@ -1,6 +1,8 @@
 import copy
 import hashlib
 import json
+import sys
+from urllib.parse import unquote
 from contextlib import contextmanager
 from types import SimpleNamespace as NS
 
@@ -96,6 +98,8 @@ class FakeClient:
         self.compute_state = 'ACTIVE'
         self.compute_starts = []
         self.start_enters_transition = True
+        self.deletions = []
+        self.lose_delete_response = False
         self.lose_start_response = False
         self.production = []
         self.revoked = False
@@ -146,6 +150,8 @@ class FakeClient:
         self.reads.append(path)
         return self.files.get(path)
 
+    _workspace_object_type = staticmethod(MarketAidpClient._workspace_object_type)
+
     def _ensure_folder(self, workspace, path):
         pass
 
@@ -160,6 +166,18 @@ class FakeClient:
         return [{'key': 'agent'}]
 
     def _request(self, method, path, **kwargs):
+        if '/objects/' in path:
+            name = unquote(path.split('/objects/', 1)[1])
+            if method == 'GET':
+                return self.files.get(name), {'etag': 'fixture-etag', 'object-type': 'FILE'}
+            assert method == 'DELETE' and kwargs['headers'] == {'if-match': 'fixture-etag'}
+            assert self.saved['maintenance']['rollback_delete_intents']
+            self.deletions.append(name)
+            self.files.pop(name, None)
+            if self.lose_delete_response:
+                self.lose_delete_response = False
+                raise TimeoutError('delete committed; response lost')
+            return None
         if method == 'POST':
             assert path == '/workspaces/workspace/clusters/compute/actions/start' and kwargs['payload'] == {}
             assert self.saved['maintenance']['compute_start_intent']['compute_key'] == 'compute'
@@ -219,6 +237,150 @@ def client(monkeypatch):
 
 def run(client, action='update', operation=OP, **kw):
     return work.maintain(client, action, operation, sleep=lambda _: None, **kw)
+
+
+@pytest.fixture
+def additive_candidate(client, monkeypatch):
+    original = candidate
+    def extended(source):
+        files = original(source)
+        if source == NEW:
+            files['core/new_module.py'] = b'new module\n'
+            files.pop('package-manifest.json')
+            files['package-manifest.json'] = encoded(package_manifest(files))
+        return files
+    monkeypatch.setattr(sys.modules[__name__], 'candidate', extended)
+    return client
+
+
+def test_update_adds_absent_module_and_records_exact_before_and_target_inventories(additive_candidate):
+    client = additive_candidate
+    assert run(client)['status'] == 'completed'
+    journal = client.saved['maintenance']
+    assert journal['inventory_additions'] == ['core/new_module.py']
+    assert 'core/new_module.py' not in journal['before_hashes']
+    assert client.files[AGENT_ROOT + '/core/new_module.py'] == b'new module\n'
+    assert client.saved['resources']['package_hashes'] == file_hashes(candidate(NEW))
+    assert_resource_identity_preserved(client)
+
+
+@pytest.mark.parametrize('raw', [b'foreign module\n', b'new module\n'])
+def test_inventory_addition_never_adopts_preexisting_bytes(additive_candidate, raw):
+    client = additive_candidate
+    client.files[AGENT_ROOT + '/core/new_module.py'] = raw
+    before = copy.deepcopy(client.files)
+    with pytest.raises(AidpProvisionConflict, match='cannot adopt'):
+        run(client)
+    assert client.files == before and client.uploads == [] and client.refreshes == []
+    assert 'maintenance' not in client.saved
+
+
+def test_failed_candidate_removes_only_its_new_module_during_rollback(additive_candidate):
+    client = additive_candidate
+    client.production = [published_fixture()]
+    client.fail_new_probe = True
+    client.lose_delete_response = True
+    result = run(client, preserve_production=True)
+    assert result['status'] == 'rolled_back'
+    assert client.deletions == [AGENT_ROOT + '/core/new_module.py']
+    assert client.refreshes == [NEW, OLD]
+    assert 'core/new_module.py' not in client.saved['resources']['package_hashes']
+    assert {path: raw for path, raw in client.files.items() if path.startswith(AGENT_ROOT + '/')} == client.original_files
+    assert client.production == [published_fixture()]
+    assert_resource_identity_preserved(client)
+
+
+def test_addition_with_lost_upload_response_resumes_without_duplicate_creation(additive_candidate):
+    client = additive_candidate
+    path = AGENT_ROOT + '/core/new_module.py'
+    client.fail_path = path
+    with pytest.raises(AidpProvisionPending):
+        run(client, max_steps=2)
+    assert client.saved['maintenance']['phase'] == 'target_files'
+    assert run(client)['status'] == 'completed'
+    assert client.uploads.count(path) == 1 and client.refreshes == [NEW]
+
+
+def test_rollback_preserves_changed_addition_and_its_running_journal(additive_candidate):
+    client = additive_candidate
+    assert run(client)['status'] == 'completed'
+    path = AGENT_ROOT + '/core/new_module.py'
+    client.files[path] = b'operator change\n'
+    with pytest.raises(AidpProvisionConflict, match='added artifact changed'):
+        run(client, action='rollback')
+    assert client.files[path] == b'operator change\n' and not client.deletions
+    assert client.saved['maintenance']['phase'] == 'rollback_files'
+
+
+@pytest.mark.parametrize('action', ['update', 'rollback'])
+def test_identical_foreign_addition_after_backup_cannot_be_adopted_or_deleted(additive_candidate, action):
+    client = additive_candidate
+    with pytest.raises(AidpProvisionPending):
+        run(client, max_steps=1)
+    path = AGENT_ROOT + '/core/new_module.py'
+    client.files[path] = b'new module\n'
+    with pytest.raises(AidpProvisionConflict, match='creation intent'):
+        run(client, action=action)
+    assert client.files[path] == b'new module\n' and not client.deletions and not client.refreshes
+    assert path not in client.uploads
+
+
+def test_rollback_does_not_delete_a_folder_with_bytes_matching_an_empty_added_file(additive_candidate, monkeypatch):
+    client = additive_candidate
+    original = candidate
+    def empty(source):
+        files = original(source)
+        if source == NEW:
+            files['core/new_module.py'] = b''
+            files.pop('package-manifest.json')
+            files['package-manifest.json'] = encoded(package_manifest(files))
+        return files
+    monkeypatch.setattr(sys.modules[__name__], 'candidate', empty)
+    assert run(client)['status'] == 'completed'
+    request = client._request
+    def folder(method, path, **kwargs):
+        if method == 'GET' and '/objects/' in path:
+            return b'', {'etag': 'fixture-etag', 'object-type': 'FOLDER'}
+        return request(method, path, **kwargs)
+    client._request = folder
+    with pytest.raises(AidpProvisionConflict, match='added artifact changed'):
+        run(client, action='rollback')
+    assert not client.deletions
+
+
+@pytest.mark.parametrize('tamper', ['undeclared', 'foreign_delete', 'before_inventory'])
+def test_resumed_additions_require_the_exact_saved_inventory_contract(additive_candidate, tamper):
+    client = additive_candidate
+    with pytest.raises(AidpProvisionPending):
+        run(client, max_steps=1)
+    journal = client.saved['maintenance']
+    if tamper == 'undeclared':
+        journal.pop('inventory_additions')
+    elif tamper == 'foreign_delete':
+        journal['rollback_delete_intents'] = {'core/runtime.py': journal['target_hashes']['core/runtime.py']}
+    else:
+        journal['before_state']['resources']['package_hashes'].pop('core/runtime.py')
+    before, uploads = copy.deepcopy(client.files), list(client.uploads)
+    with pytest.raises(AidpProvisionConflict, match='journal is invalid'):
+        run(client)
+    assert client.files == before and client.uploads == uploads and not client.deletions
+
+
+@pytest.mark.parametrize('change', ['directory', 'removal'])
+def test_inventory_update_keeps_layout_migrations_explicit(client, monkeypatch, change):
+    files = candidate(NEW)
+    files.pop('package-manifest.json')
+    if change == 'directory':
+        files['core/new_folder/module.py'] = b'new module\n'
+    else:
+        files.pop('core/runtime.py')
+    files['package-manifest.json'] = encoded(package_manifest(files))
+    monkeypatch.setattr(work, 'agent_package', lambda _: (NEW, {name: raw for name, raw in files.items()
+        if name != 'market_intelligence.py'}))
+    before = copy.deepcopy(client.files)
+    with pytest.raises(AidpProvisionConflict, match='layout migration'):
+        run(client)
+    assert client.files == before and client.uploads == [] and not client.refreshes
 
 
 def published_fixture():

@@ -2,7 +2,7 @@
 import hashlib
 import json
 
-from ai_market_intelligence.runtime.wire import MarketWireDecoder
+from ai_market_intelligence.runtime.wire import MarketWireDecoder, MarketTextStreams
 
 
 class MarketGatewayStream:
@@ -16,6 +16,7 @@ class MarketGatewayStream:
         self.has_response=False
         self.require_response=require_response
         self.seen={}
+        self.text_streams=MarketTextStreams()
 
     def feed(self,chunk):
         if not isinstance(chunk,bytes):
@@ -46,7 +47,7 @@ class MarketGatewayStream:
         if not self.lines:
             return []
         self.frames+=1
-        if self.frames>2048:
+        if self.frames>4096:
             raise ValueError('Native SSE exceeds its event limit')
         raw=b'\n'.join(self.lines)
         if raw.strip()==b'[DONE]':
@@ -85,6 +86,10 @@ class MarketGatewayStream:
         decoder.finish()
         fresh=[]
         for packet in packets:
+            if packet['kind']=='text':
+                if self.text_streams.accept(packet):
+                    fresh.append(packet)
+                continue
             signature=hashlib.sha256(json.dumps(packet,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
             identity=packet.get('event',{}).get('event_id') or signature
             if identity in self.seen:
@@ -92,6 +97,7 @@ class MarketGatewayStream:
                     raise ValueError('An immutable public event changed during native replay')
                 continue
             self.seen[identity]=signature
+            self.text_streams.observe(packet)
             self.has_response=self.has_response or packet['kind']=='response'
             fresh.append(packet)
         return fresh

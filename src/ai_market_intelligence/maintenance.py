@@ -6,6 +6,7 @@ import re
 import time
 from pathlib import PurePosixPath
 from uuid import UUID
+from urllib.parse import quote
 from oci._vendor.requests.exceptions import RequestException
 
 from .authorization import verify_administrator
@@ -105,7 +106,27 @@ def _journal_inventory(journal):
                 _invalid_journal()
         for name, digest in hashes.items():
             _journal_file(name, digest)
-    if set(journal['before_hashes']) != set(journal['target_hashes']):
+    _journal_additions(journal)
+
+
+def _journal_additions(journal):
+    additions = journal.get('inventory_additions', [])
+    if (not isinstance(additions, list) or any(not isinstance(name, str) for name in additions)
+            or additions != sorted(set(additions))
+            or set(journal['target_hashes']) != set(journal['before_hashes']) | set(additions)
+            or set(additions) & set(journal['before_hashes'])
+            or additions and (journal['schema_version'] != 2 or journal['action'] != 'update')):
+        _invalid_journal()
+    _journal_addition_intents(journal, additions)
+
+
+def _journal_addition_intents(journal, additions):
+    for key in ('addition_write_intents', 'rollback_delete_intents'):
+        intents = journal.get(key, {})
+        if (not isinstance(intents, dict) or set(intents) - set(additions)
+                or any(digest != journal['target_hashes'][name] for name, digest in intents.items())):
+            _invalid_journal()
+    if set(journal.get('rollback_delete_intents', {})) - set(journal.get('addition_write_intents', {})):
         _invalid_journal()
 
 
@@ -125,6 +146,10 @@ def _journal_previous_state(state, journal):
     for key in RESOURCE_IDENTITIES:
         if before['resources'].get(key) != state['resources'].get(key):
             _invalid_journal()
+    if journal.get('inventory_additions') and before['resources'].get('package_hashes') != {
+        name: digest for name, digest in journal['before_hashes'].items() if name != DESCRIPTOR
+    }:
+        _invalid_journal()
     return before
 
 
@@ -240,6 +265,50 @@ def _guarded_upload(client, state, path, content, *, allowed):
         raise AidpProvisionPending('The exact maintenance artifact is not visible yet.', 'maintenance')
 
 
+def _create_additions(client, state, target):
+    journal = state['maintenance']
+    for name in journal.get('inventory_additions', []):
+        path = agent_root(state) + '/' + name
+        intents = journal.setdefault('addition_write_intents', {})
+        if name not in intents:
+            verify_administrator(client)
+            _assert_descriptor(client, state)
+            _check_production(client, state)
+            if _read(client, state['workspace'], path) is not None:
+                raise AidpProvisionConflict('An added artifact appeared before its creation intent; its bytes were preserved.')
+            intents[name] = journal['target_hashes'][name]
+            _save(client, state)
+        _guarded_upload(client, state, path, target[name], allowed=(None, target[name]))
+
+
+def _remove_additions(client, state, target):
+    """Retire only files whose absence was recorded before this operation."""
+    journal = state['maintenance']
+    for name in journal.get('inventory_additions', []):
+        verify_administrator(client)
+        _assert_descriptor(client, state)
+        _check_production(client, state)
+        path = agent_root(state) + '/' + name
+        endpoint = f"/workspaces/{state['workspace']}/objects/{quote(path, safe='')}"
+        raw, headers = client._request('GET', endpoint, headers={'Accept': '*/*'},
+            raw_response=True, include_headers=True, allow_not_found=True, phase='maintenance')
+        if raw is None:
+            continue
+        if name not in journal.get('addition_write_intents', {}):
+            raise AidpProvisionConflict('An added artifact has no creation intent; rollback preserved its bytes.')
+        if client._workspace_object_type(raw, headers) != 'FILE' or raw != target[name]:
+            raise AidpProvisionConflict('An added artifact changed; rollback preserved its bytes.')
+        intents = journal.setdefault('rollback_delete_intents', {})
+        if name not in intents:
+            intents[name] = journal['target_hashes'][name]
+            _save(client, state)
+        etag = headers.get('etag') or headers.get('ETag')
+        client._request('DELETE', endpoint, headers={'if-match': etag} if etag else {}, phase='maintenance')
+        _check_production(client, state)
+        if _read(client, state['workspace'], path) is not None:
+            raise AidpProvisionPending('The recorded added artifact is not absent yet.', 'maintenance')
+
+
 def _target(client, state):
     source, assets = agent_package(client._runtime_config(state))
     files = {'market_intelligence.py': source, **assets}
@@ -331,23 +400,46 @@ def _row(native, state):
     return row
 
 
+def _read_update_inventory(client, state, target):
+    try:
+        inventory = validate_inventory(state['resources'].get('package_hashes'))
+    except ValueError:
+        raise AidpProvisionConflict('The recorded managed inventory is invalid; no files were adopted.') from None
+    if MANIFEST not in inventory or not set(inventory) <= set(target):
+        raise AidpProvisionConflict('Update cannot remove or rename installed artifacts; use a layout migration.')
+    before = {name: _read(client, state['workspace'], agent_root(state) + '/' + name)
+              for name in [*inventory, DESCRIPTOR]}
+    if any(value is None for value in before.values()):
+        raise AidpProvisionConflict('The recorded managed artifact inventory is incomplete; no files were adopted.')
+    additions = sorted(set(target) - set(before))
+    parents = {str(parent) for name in before for parent in PurePosixPath(name).parents}
+    if any(str(PurePosixPath(name).parent) not in parents for name in additions):
+        raise AidpProvisionConflict('New source folders require a layout migration, not an inventory update.')
+    if any(_read(client, state['workspace'], agent_root(state) + '/' + name) is not None for name in additions):
+        raise AidpProvisionConflict('An added artifact already exists; update cannot adopt its bytes.')
+    return before, additions
+
+
+def _verify_installed_candidate(client, state, before):
+    try:
+        descriptor = json.loads(before[DESCRIPTOR])
+    except (ValueError, TypeError):
+        raise AidpProvisionConflict('The current ownership descriptor is invalid.') from None
+    executable = {name: raw for name, raw in before.items() if name != DESCRIPTOR}
+    if descriptor != client._descriptor(state) or source_identity(executable) != state['resources'].get('source_sha256'):
+        raise AidpProvisionConflict('The installed descriptor/source no longer matches its receipt.')
+    candidate_digest = inventory_digest(file_hashes(executable))
+    if candidate_digest != state['resources'].get('test_intent', {}).get('package_sha256'):
+        raise AidpProvisionConflict('The installed source or dependencies changed after TEST acceptance.')
+
+
 def _begin(client, native, state, action, operation, session, runtime_config=None, *, preserve_production=False):
     if state.get('layout_version') != 2:
         raise AidpProvisionConflict('Legacy layout migration requires verified native rebinding; the installation and backups were preserved.')
     config = target_configuration(client, state, runtime_config)
     pack, target = _target(client, {**state, 'runtime_config': config})
-    before = {name: _read(client, state['workspace'], agent_root(state) + '/' + name) for name in target}
-    if any(value is None for value in before.values()):
-        raise AidpProvisionConflict('The managed artifact inventory is incomplete; update cannot add or adopt files.')
-    try:
-        descriptor = json.loads(before[DESCRIPTOR])
-    except (ValueError, TypeError):
-        raise AidpProvisionConflict('The current ownership descriptor is invalid.') from None
-    if descriptor != client._descriptor(state) or source_identity({name: raw for name, raw in before.items() if name != DESCRIPTOR}) != state['resources'].get('source_sha256'):
-        raise AidpProvisionConflict('The installed descriptor/source no longer matches its receipt.')
-    candidate_digest = inventory_digest(file_hashes({name: raw for name, raw in before.items() if name != DESCRIPTOR}))
-    if candidate_digest != state['resources'].get('test_intent', {}).get('package_sha256'):
-        raise AidpProvisionConflict('The installed source or dependencies changed after TEST acceptance.')
+    before, additions = _read_update_inventory(client, state, target)
+    _verify_installed_candidate(client, state, before)
     if action == 'redeploy' and (pack != state['pack_sha256'] or before != target):
         raise AidpProvisionConflict('Redeploy requires the same package and exact current sources; use update for a new candidate.')
     row = _row(native, state)
@@ -365,6 +457,8 @@ def _begin(client, native, state, action, operation, session, runtime_config=Non
                'target_runtime_config': copy.deepcopy(config), 'target_config_sha256': runtime_config_hash(config),
                'before_identity': deployment_identity(row), 'before_hashes': {name: _digest(raw) for name, raw in before.items()},
                'target_hashes': {name: _digest(raw) for name, raw in target.items()}}
+    if additions:
+        journal['inventory_additions'] = additions
     if preserve_production:
         journal['prod_snapshot'] = _production(client, state)
     if getattr(native, 'deployment_driver', None) == 'plugin_cli':
@@ -426,13 +520,18 @@ def _snapshot_files(client, state):
 def _replace_files(client, state, side, native=None):
     before, target = _backups(client, state, 'before'), _backups(client, state, 'target')
     desired = before if side == 'before' else target
+    if side == 'before':
+        _remove_additions(client, state, target)
+    else:
+        _create_additions(client, state, target)
     if 'test_driver' in state['maintenance']:
+        # The CLI's existing-file preconditions remain strict; the owner journals new files first.
         _check_production(client, state)
         native.sync_candidate(state, desired)
         _check_production(client, state)
     for name, raw in desired.items():
         if name != DESCRIPTOR or 'test_driver' in state['maintenance']:
-            _guarded_upload(client, state, agent_root(state) + '/' + name, raw, allowed=(before[name], target[name]))
+            _guarded_upload(client, state, agent_root(state) + '/' + name, raw, allowed=(before.get(name), target[name]))
     state['maintenance']['phase'] = 'rollback_refresh' if side == 'before' else 'target_refresh'
     _save(client, state)
 
@@ -494,6 +593,18 @@ def _poll(client, native, state, rollback):
     for name, content in files.items():
         if name != DESCRIPTOR and _read(client, state['workspace'], agent_root(state) + '/' + name) != content:
             raise AidpProvisionConflict('Managed files changed after refresh; the revision was not accepted.')
+    probe = _probe_candidate(client, state, row, files, rollback)
+    if probe is None:
+        return
+    if deployment_identity(_row(native, state)) != identity:
+        raise AidpProvisionConflict('TEST changed during its probe; this revision was not accepted.')
+    journal[prefix + '_verified'] = {**probe, 'deployment_identity': identity}
+    journal['phase'] = 'rollback_commit' if rollback else 'commit'
+    _save(client, state)
+
+
+def _probe_candidate(client, state, row, files, rollback):
+    journal = state['maintenance']
     try:
         verify_administrator(client)
         config = journal['before_state'].get('runtime_config', {'research_enabled': False}) if rollback else journal['target_runtime_config']
@@ -510,12 +621,8 @@ def _poll(client, native, state, rollback):
             raise
         journal.update(phase='rollback_files', failure='candidate_probe_rejected')
         _save(client, state)
-        return
-    if deployment_identity(_row(native, state)) != identity:
-        raise AidpProvisionConflict('TEST changed during its probe; this revision was not accepted.')
-    journal[prefix + '_verified'] = {**probe, 'deployment_identity': identity}
-    journal['phase'] = 'rollback_commit' if rollback else 'commit'
-    _save(client, state)
+        return None
+    return probe
 
 
 def _complete(client, native, state, rollback):

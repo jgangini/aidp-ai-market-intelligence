@@ -120,10 +120,11 @@ def test_prompt_inventory_preserves_unchanged_text_and_reviewed_research_revisio
     expected.update(
         market_select_sources='58896d15b6add9bef378ef50959ebe0f0221cec0779de82051f2245e86f2db9d',
         market_understand='ab4fab90b6068f404ec006d99fffb8f6dfa0fcc3c2f477a485f2fc85e44b0db0',
-        market_plan='a74a53493bb3ab35f61c724a232a204acd61d309003444ff195f67920380e8df',
-        market_analyze='98b54c1b0d7280c331a704438a3eb1c3ab7c211e6ea1e4b1b10e994b22592db2',
-        market_draft='f6aee433309455e010f611ae828e17d4cfaa246c75100e7d9b1ee86f1c0088ea',
-        market_consolidate='0b1aad9efa2dff4be246917aee7e7ab7f28537a5ab06ee54b721d0a8419ae6f9',
+        market_plan='c15c4c2d5ef0bcad50d6701b35fdf3c4f7be3efeb7510424f203288fec14cb27',
+        market_analyze='d037086ef55b877129008ea3ce8d2c67f494ebfed625fbbdc6eb31e9c59a0f0f',
+        market_draft='f70af5311ad7e7147f3783570155a26a747de79bd23c53a7b9db6b782e2a93cb',
+        market_consolidate='18d3521425217a33d0a67bed6df4624a3f39bc9944911a840a16003a42cbbb4b',
+        market_verify_items='4a6aff9708a2de34ff4ccae551c5c36ef1f6da49891b8544e5560c4fa9fc416c',
         # Reviewed distinction between shared predicates and thematic aggregation.
         market_repair_units='298a3073cf4a8cfc6bda2b67995021b0417425df165954a99308381ffb8a091f',
         market_verify='426d743ea7224a7397f4b69b008bfa243f7d847bb63ac90542ba993bd95d5458',

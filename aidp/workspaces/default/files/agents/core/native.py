@@ -342,6 +342,9 @@ class MarketAgentRuntime:
                     "markdown": str(error),
                     "references": [],
                     "artifacts": [],
+                    "pending_request_id": error.request_id,
+                    "resumable": True,
+                    "continuation_safe": False,
                 },
             )
             return
@@ -406,7 +409,12 @@ class MarketAgentRuntime:
                 )
             ) as stream:
                 async for text in stream:
-                    if json.loads(text)["kind"] == "response":
+                    packet = json.loads(text)
+                    if packet["kind"] == "response":
+                        if packet["response"].get("status") == "pending":
+                            packet["response"]["continuation_safe"] = self.capture_continuation_safe(effects)
+                            text = market_wire_line("response", request_id=request["request_id"],
+                                                    response=packet["response"])
                         self.finish_response(session, request, store, effects)
                     yield text
         except MarketEffectPending as error:
@@ -418,9 +426,27 @@ class MarketAgentRuntime:
                     "markdown": str(error),
                     "references": [],
                     "artifacts": [],
+                    "continuation_safe": False,
                 },
             )
             return
+
+    @staticmethod
+    def capture_continuation_safe(effects):
+        recorded, _ = effects.read()
+        pending = [row for row in (recorded or {}).get("operations", {}).values()
+                   if row["state"] not in {"completed", "rejected"}]
+        if not pending:
+            return False
+        for row in pending:
+            receipt = row.get("receipt") or {}
+            diagnostic = (row.get("result") or {}).get("diagnostic")
+            if (row["kind"] != "apify" or row["state"] != "running"
+                    or not isinstance(receipt.get("runId"), str) or not receipt["runId"]
+                    or receipt.get("status") not in {"READY", "RUNNING", "SUCCEEDED"}
+                    or diagnostic is not None and diagnostic.get("retryable") is not True):
+                return False
+        return True
 
     @staticmethod
     def finish_response(session, request, store, effects):

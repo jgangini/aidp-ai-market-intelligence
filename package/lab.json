@@ -85,11 +85,11 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/actor_profiles.py",
-      "sha256": "b099a6d855f810620c57bfb329f9fe9c9aa5e33200905bb74844327f33891cfd"
+      "sha256": "ece94f05750811152d14c8c5c709eabb4934e3bc0d806857fb6fea355c642fb9"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/actor_tools.py",
-      "sha256": "f1d56608e17ae8685096eb6c886524b40bd2daf53780fe2fc6b087ce02b77ed3"
+      "sha256": "f77cbec346928ecdc86c443fb495e7c120cd97f1a6c482604f9677f1652b98d0"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/artifacts.py",
@@ -97,7 +97,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/collector.py",
-      "sha256": "e8d0d062f084f0f21245c37c5c19ae15173233600f1e943518870bd43a98bcc7"
+      "sha256": "f2eaca5f3f2ffc49df3fd91c55a1c3b4096ebefdb1c7b61a938131b823168271"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/config.py",
@@ -105,7 +105,11 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/connectors.py",
-      "sha256": "8427a357da4259178af306e56e569a0bc7042fcaaf29543ae0c0d531ed692c96"
+      "sha256": "6f9ee99b9e2632bcc16b4b9efa7d2d8ed5045b46597df06e6b36a754c25f072a"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/content_items.py",
+      "sha256": "8ee465c22587ab056ad65cb54d67623f98dd246278de1a1e9574c135e1a63616"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/contracts.py",
@@ -113,15 +117,15 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/decisions/__init__.py",
-      "sha256": "80e3f684c853b200d6cb6455f1cbef24bda47ecaf5dd99bab9acee383e380e38"
+      "sha256": "607b980b44c78d3a43ee3d1b8ed7f717510e09d218922a9b32d13a679d25808d"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/decisions/report.py",
-      "sha256": "1d0d8b7be6bd139197e8a5a15bc501cecb3c17157b0441380d37926b3875c478"
+      "sha256": "94852c30254a8acc228d2f2f7883c1c0c50e41237b50c42b39646f4938476265"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/decisions/research.py",
-      "sha256": "2ff734be8bbcf1c71740650bfae4d43ec1ce4065329bb910d3683c03c3de7d0b"
+      "sha256": "97b7f163da57bb5d9e2c9eb3f579e393c5c6b8f00397467a514a1bdfad9a7c6c"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/decisions/understand.py",
@@ -129,7 +133,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/decisions/verify.py",
-      "sha256": "2b825af2f8d0177ec0bbfff65d6ca07cb5bf342bd5b388d984fa8b546773a546"
+      "sha256": "5138746f6bbe7e993ba2f184425ea96f36b5e013665f2260fe44a67123cda6cd"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/documents.py",
@@ -153,7 +157,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/mcp_payload.py",
-      "sha256": "79d8db532fc61f50d9d1eead9cbc2f33f61428a19087487ee314a88e32ae6116"
+      "sha256": "b989851696f7794aeae00b3f361384c0615b584d8f982412275e3edcc7dfb950"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/mcp_tools.json",
@@ -169,7 +173,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/model.py",
-      "sha256": "77cbc9975591338deb3a6ba8ea88da70edd13aa05613e807e1498cc7bb3c826e"
+      "sha256": "3a6c754cd69bd9b5263723f0b896a01fbcce15130328d76de8f55d1a84dcf6b4"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/model_bridge.py",
@@ -177,7 +181,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/native.py",
-      "sha256": "c6c0e9c8a63fbbc3c4e599607c0c033a86071240eef2eb42b61b61ed431f41de"
+      "sha256": "5c0ec36b195a8df8dcd7e6255550c69173053f4182f1cfcd668b5179d39bc5fd"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/package_identity.py",
@@ -189,11 +193,11 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/provider.py",
-      "sha256": "916ec6ad7afe9b70efdce61b2e9a4c88547e9bfdda7cbc1059743e2da09daeac"
+      "sha256": "3796d7abf411b03cf424f85649fbc78a9464ed964f40739d38180c42d2b86434"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/research_contracts.py",
-      "sha256": "26e9aa84c9d29a5dd721090469892993d6c8572a0950349d28af22943d1b8981"
+      "sha256": "1c4c413727309535586ab806c4c909d3bf2444c5f4e80c3f4270cdfa78901953"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/runtime.json",
@@ -201,7 +205,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/runtime_core.py",
-      "sha256": "3019051e063df5558e575d19fc34a7d998999493ea8bdd663a07403a03231279"
+      "sha256": "08c46488764077f0d0df65af58a268d19633198461341cbd683377d603c57877"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/runtime_versions.py",
@@ -209,7 +213,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/serp.py",
-      "sha256": "4aa2c11e937d153544da2e9a787b49668a8f1a8db2d4e7f148f8cd206d04d1dd"
+      "sha256": "c2bb2343a896dec7c11eb38c6e3c05af27e23b951dbf7682837eb996917b1dfc"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/services.py",
@@ -217,7 +221,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/session.py",
-      "sha256": "812ed8e4da967583e6f322fdc6b84439e840bcd2f2f7923b24638a79543834f5"
+      "sha256": "51540cef0cc9a5aad61c9dd4ef9923041e13ecebd1905de1ed0028afb40399f0"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/social.py",
@@ -225,19 +229,19 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/social_search.py",
-      "sha256": "219daa5fcbb87e45381b822a3d28e2d0b66bab044b9ab0725472ce63ea5d68c6"
+      "sha256": "83ab3a91668e33db0b3575ea0e9b85386f2aade11176780ce45d4a84ca47e1b6"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/state.py",
-      "sha256": "7ab740d2d9c90ecd17668febd620271ab8191e57947ae2eba5bfd9d9c5f3383b"
+      "sha256": "bcc199cf21d463d1ec0135a61c3d30f40cf31327e975d5ab65f22537fa7f33af"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/wire.py",
-      "sha256": "cb1f49491a4eaf996a67d212322d8aae5b06f86a8959387b2a7b5956f00fec8b"
+      "sha256": "7efbecfd56fac93c52f788ca53e0226ba3045d12540cfd94d5a49512285c6dab"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/workflow.py",
-      "sha256": "33f37382a5825ef18202a38b4975d73f214bab6370b8b0d57ffdaddc0ad547a1"
+      "sha256": "a8fcb4e97f287e8335fd7ed1cb65857b2713fdf86514cff56dff45acef0db19f"
     },
     {
       "file": "aidp/workspaces/default/files/agents/market_intelligence.py",
@@ -262,5 +266,5 @@
       "sha256": "02d8ebfd9f19dd08b7c1b47e22137899f29fc525e208cdb88c285492e21ad477"
     }
   ],
-  "pack_sha256": "dca3aab6a82ba73134c840a6726d0df7ec509d9455f78b582f8520ffffd820d7"
+  "pack_sha256": "00a64d5e6749e40d4d6f2cb192105a24bb7a21d2d04f44cb5d4933dc4ca12e5f"
 }

@@ -134,6 +134,42 @@ def test_instagram_known_unavailable_profile_is_not_invalid_dataset_and_preserve
     with pytest.raises(ValueError):_social_result([error]*11,{'runId':'receipt'},call)
 
 
+def test_instagram_unavailable_profile_survives_the_actual_dataset_field_projection():
+    from tests.runtime.test_market_intelligence_payload import provider_for
+    call=social_call('instagram')
+    row={'url':'https://instagram.com/fixturebrand','username':'fixturebrand',
+         'error':'not_found','errorDescription':'Profile does not exist'}
+    provider,tool=provider_for(None)
+    async def projected(arguments):
+        tool.calls.append(arguments)
+        return {'datasetId':'dataset','items':[
+            {key:value for key,value in row.items() if key in arguments['fields'].split(',')}
+        ]}
+    tool.ainvoke=projected
+    receipt={'runId':'receipt','datasetId':'dataset','status':'SUCCEEDED','spent_microusd':500}
+    result=asyncio.run(provider.observations(receipt,call))
+    assert result.items==[] and result.cost==500
+    assert result.coverage['provider_result_error']=='instagram_destination_unavailable'
+    assert result.coverage['unavailable_social_destinations']==[row['url']]
+    row['username']='foreign'
+    with pytest.raises(ValueError):asyncio.run(provider.observations(receipt,call))
+
+
+def test_replaced_facebook_search_does_not_accept_the_previous_actors_error_contract():
+    from ai_market_intelligence.runtime.provider import _social_result
+    from tests.runtime.test_market_intelligence_research_collector import market_collection_fixture
+    _,_,collector=market_collection_fixture()
+    call=collector.call('facebook_search',Market_WINDOW,query='Fixture brand')
+    error={'url':'https://www.facebook.com/api/graphql/','error':'no_items',
+           'errorDescription':'Empty or private data for provided input'}
+    receipt={'runId':'receipt','spent_microusd':500}
+    for rows in ([error], [{**error,'url':'https://facebook.com/foreign'}],
+                 [{**error,'error':'unknown'}], [{**error,'errorDescription':'Other failure'}],
+                 [{**error,'isError':True}], [error,error], [error,{'text':'unverified'}]):
+        with pytest.raises(ValueError):_social_result(rows,receipt,call)
+    with pytest.raises(ValueError):_social_result([error],receipt,social_call('facebook'))
+
+
 def test_exact_runtime_comparison_rejects_python_patch_drift_and_unknown_packages():
     observed={'python':'3.11.13','packages':{name:'1.0.0' for name in RUNTIME_DISTRIBUTIONS}}
     assert exact_runtime_comparison(observed,copy.deepcopy(observed))['exact_match']
@@ -419,7 +455,13 @@ def test_late_review_of_repaired_units_retains_only_newly_accepted_units(retaine
     brief = store.read()[0]['brief']
     label = ('Periodo de publicaciones consultado' if mode == 'conversation'
              else 'Ventana operativa de búsqueda')
-    assert f"{label}: {brief['start']} a {brief['end']}" in response['markdown']
+    assert f"{label}: del " in response['markdown']
+    from datetime import datetime
+    for raw in (brief['start'], brief['end']):
+        instant = datetime.fromisoformat(raw)
+        assert f"{instant.day} de " in response['markdown']
+        assert f"{instant.year}, {instant:%H:%M:%S} UTC" in response['markdown']
+        assert raw not in response['markdown']
     if mode != 'conversation':
         assert 'Periodo de publicaciones consultado' not in response['markdown']
         assert '2020' in brief['objective']

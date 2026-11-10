@@ -18,6 +18,7 @@ from .report import repair_units, REPAIR_UNITS_ID, REPAIR_UNITS_PROMPT
 from .verify import verify, VERIFY_ID, VERIFY_PROMPT
 from .verify import verify_summary, VERIFY_SUMMARY_ID, VERIFY_SUMMARY_PROMPT
 from .verify import verify_repair, VERIFY_REPAIR_ID, VERIFY_REPAIR_PROMPT
+from .verify import verify_items, VERIFY_ITEMS_ID, VERIFY_ITEMS_PROMPT
 
 PROMPTS = {
     UNDERSTAND_ID: UNDERSTAND_PROMPT,
@@ -34,10 +35,15 @@ PROMPTS = {
     VERIFY_ID: VERIFY_PROMPT,
     VERIFY_SUMMARY_ID: VERIFY_SUMMARY_PROMPT,
     VERIFY_REPAIR_ID: VERIFY_REPAIR_PROMPT,
+    VERIFY_ITEMS_ID: VERIFY_ITEMS_PROMPT,
 }
 
 
 def configure_contract(name, contract, payload, allowed_evidence=None):
+    if name == VERIFY_ITEMS_ID:
+        identities = [unit["unit_id"] for unit in payload["units"]]
+        contract["$defs"]["ContentItemReview"]["properties"]["unit_id"]["enum"] = identities
+        contract["properties"]["reviews"].update(minItems=len(identities), maxItems=len(identities))
     if name in {UNDERSTAND_ID, SELECT_REPORT_ID}:
         intake.configure_contract(name, contract, payload)
     if name in {PLAN_ID, ANALYZE_ID, SELECT_SOURCES_ID, SELECT_PASSAGES_ID}:

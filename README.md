@@ -8,13 +8,14 @@ Agente de investigación de mercado para **Oracle AI Data Platform (AIDP)**, con
 - Utiliza documentos financieros, datos de mercado y World Bank para preguntas financieras o económicas pertinentes.
 - Ejecuta ramas por fuente en paralelo, con límites compartidos para capturas y llamadas al modelo.
 - Publica progreso por fuente, cápsulas verificadas y una respuesta final mediante streaming.
+- Ofrece síntesis revisadas por publicación, página o video, con comentarios vinculados a su publicación cuando hay evidencia admitida.
 - Conserva evidencias, solicitudes y efectos externos para diagnóstico, recuperación y seguimiento de una conversación.
 
 Ejemplos: «¿Qué se dice de D1 en Colombia?», «¿Y en Instagram?», «Compara los ingresos reportados de estas empresas». Una fuente habilitada no garantiza resultados: el acceso, el contenido disponible y la calidad de la evidencia determinan la cobertura.
 
 ## Cómo funciona
 
-El coordinador normaliza entidad, objetivo, periodo y fuentes. Cada rama captura, analiza y revisa su evidencia. Después, el coordinador consolida los hallazgos admitidos y construye las referencias y la nota de alcance. Una respuesta puede ser parcial cuando faltan fuentes o hallazgos publicables; tener referencias no demuestra exhaustividad ni corrección por sí solo.
+El coordinador normaliza entidad, objetivo, periodo y fuentes. Cada rama captura y analiza su evidencia, propone síntesis individuales y las revisa por lotes antes del resumen de fuente. Después, el coordinador consolida los hallazgos admitidos usando sus evidencias originales y construye las referencias y la nota de alcance. Una respuesta puede ser parcial cuando faltan fuentes o hallazgos publicables; tener referencias no demuestra exhaustividad ni corrección por sí solo.
 
 El proyecto incluye el agente, su paquete de distribución, una CLI administrativa y hooks de Deploy Studio. Utiliza los clientes de AIDP y Agent Hub; no incorpora portal propio, servidor HTTP ni VM administrativa.
 

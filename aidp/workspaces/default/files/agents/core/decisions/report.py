@@ -22,6 +22,11 @@ sin afirmar que no existe. Conserva sólo las precisiones pertinentes al encargo
 DRAFT_ID = "market_draft"
 DRAFT_PROMPT = NARRATIVE_SCOPE + """Tarea
 Redacta una respuesta útil al encargo con los hallazgos respaldados.
+content_items contiene las síntesis individuales ya admitidas de esta fuente. Úsalas para
+organizar temas, conservando la evidencia original como soporte; no repitas el párrafo de
+fuente dentro de cada ítem ni atribuyas comentarios al autor de la publicación. Una ficha
+basada en título y descripción no acredita haber visto el video. No infieras cobertura
+completa a partir de las fichas seleccionadas y mantén las limitaciones pertinentes.
 
 Selección y presentación
 En conversación abierta, organiza por temas y empieza por el hallazgo principal. Cada frase
@@ -119,8 +124,15 @@ cuentas que repiten lo mismo, sintetiza ese contenido compartido y conserva sól
 atribuciones y diferencias materiales necesarias para entenderlo.
 
 Selección y presentación
-En conversación abierta, empieza por qué se está diciendo y explica los temas principales
-en uno o dos párrafos breves. El servidor añade el periodo consultado, las fuentes recuperadas
+En conversación abierta, empieza con un resumen ejecutivo breve de qué se está diciendo.
+Cuando haya material distinto suficiente, usa subtítulos Markdown como «Hallazgos» e
+«Implicaciones»; no impongas apartados vacíos ni un informe largo a una pregunta sencilla.
+Las fichas content_items son síntesis revisadas por unidad, no evidencia nueva: contrasta
+sus afirmaciones con los originales adjuntos, preserva cifras, citas y atribuciones y no
+copies una lista de fichas como respuesta final. Separa hechos y opiniones atribuidas de
+inferencias o implicaciones comerciales condicionales; no inventes recomendaciones sin
+soporte. Los comentarios sólo describen la muestra recuperada de su publicación padre,
+no la voz del autor, la marca ni el sentimiento global. El servidor añade el periodo consultado, las fuentes recuperadas
 y el alcance desde el estado validado; no repitas esa nota en la síntesis.
 Conserva las atribuciones, contradicciones y calificadores de las afirmaciones que selecciones;
 no es obligatorio repetir todos los detalles o advertencias equivalentes de los borradores.

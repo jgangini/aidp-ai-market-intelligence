@@ -1,0 +1,609 @@
+{
+  "collection": {
+    "schema_version": "1.0",
+    "revision": 1,
+    "items": [
+      {
+        "item_id": "item-fd4b9b31e70c95d0c3c44d2369117a8ea3aaa96daf9facb4d4a24dcea211b7fe",
+        "item_revision": 1,
+        "source_key": "facebook",
+        "kind": "post",
+        "primary_evidence_id": "post-evidence",
+        "evidence_ids": [
+          "post-evidence"
+        ],
+        "text": "El autor anunció una oferta de temporada.",
+        "content_basis": [
+          "post_text"
+        ],
+        "limitations": [
+          "Muestra acotada; no representa toda la conversación pública.",
+          "Es una muestra recuperada, sin representatividad poblacional."
+        ],
+        "comments_analysis": {
+          "status": "partial",
+          "parent_item_id": "item-fd4b9b31e70c95d0c3c44d2369117a8ea3aaa96daf9facb4d4a24dcea211b7fe",
+          "evidence_ids": [
+            "comment-evidence"
+          ],
+          "text": "En el comentario recuperado, una persona valoró la utilidad de la oferta.",
+          "analyzed_count": 1,
+          "limitations": [
+            "Muestra acotada; no representa toda la conversación pública.",
+            "Es una muestra recuperada, sin representatividad poblacional."
+          ]
+        }
+      }
+    ]
+  },
+  "references": [
+    {
+      "evidence_id": "post-evidence",
+      "source": "facebook",
+      "discovery_channel": "facebook",
+      "url": "https://www.facebook.com/example/posts/123",
+      "requested_url": null,
+      "author_url": null,
+      "author_name": "Autor de ejemplo",
+      "source_title": "Anuncio de temporada",
+      "source_relation": "unknown",
+      "media": [],
+      "media_omitted_count": 0,
+      "media_content_analyzed": false,
+      "published_at": "2026-11-10T00:00:00+00:00",
+      "data_last_updated": null,
+      "observed_at": "2026-11-10T01:00:00+00:00",
+      "content_basis": "post_text",
+      "locator": null,
+      "document_sha256": null
+    },
+    {
+      "evidence_id": "comment-evidence",
+      "source": "facebook",
+      "discovery_channel": "facebook",
+      "url": "https://www.facebook.com/example/posts/123?comment_id=456",
+      "requested_url": "https://www.facebook.com/example/posts/123",
+      "author_url": null,
+      "author_name": null,
+      "source_title": null,
+      "source_relation": "unknown",
+      "media": [],
+      "media_omitted_count": 0,
+      "media_content_analyzed": false,
+      "published_at": "2026-11-10T00:00:00+00:00",
+      "data_last_updated": null,
+      "observed_at": "2026-11-10T01:00:00+00:00",
+      "content_basis": "comment_text",
+      "locator": null,
+      "document_sha256": null
+    }
+  ],
+  "legacy_response": {
+    "protocol": "ai-market-intelligence",
+    "version": "2.0",
+    "kind": "response",
+    "request_id": "fixture-request",
+    "response": {
+      "status": "complete",
+      "markdown": "Respuesta sin colección opcional.",
+      "references": [
+        {
+          "evidence_id": "post-evidence",
+          "source": "facebook",
+          "discovery_channel": "facebook",
+          "url": "https://www.facebook.com/example/posts/123",
+          "requested_url": null,
+          "author_url": null,
+          "author_name": "Autor de ejemplo",
+          "source_title": "Anuncio de temporada",
+          "source_relation": "unknown",
+          "media": [],
+          "media_omitted_count": 0,
+          "media_content_analyzed": false,
+          "published_at": "2026-11-10T00:00:00+00:00",
+          "data_last_updated": null,
+          "observed_at": "2026-11-10T01:00:00+00:00",
+          "content_basis": "post_text",
+          "locator": null,
+          "document_sha256": null
+        },
+        {
+          "evidence_id": "comment-evidence",
+          "source": "facebook",
+          "discovery_channel": "facebook",
+          "url": "https://www.facebook.com/example/posts/123?comment_id=456",
+          "requested_url": "https://www.facebook.com/example/posts/123",
+          "author_url": null,
+          "author_name": null,
+          "source_title": null,
+          "source_relation": "unknown",
+          "media": [],
+          "media_omitted_count": 0,
+          "media_content_analyzed": false,
+          "published_at": "2026-11-10T00:00:00+00:00",
+          "data_last_updated": null,
+          "observed_at": "2026-11-10T01:00:00+00:00",
+          "content_basis": "comment_text",
+          "locator": null,
+          "document_sha256": null
+        }
+      ],
+      "artifacts": []
+    }
+  },
+  "event": {
+    "protocol": "ai-market-intelligence",
+    "version": "2.0",
+    "kind": "event",
+    "event": {
+      "schema_version": "1.0",
+      "event_id": "f1670df52518866350bce02ee34b923c45957ef51a4634a7f29249816f6afbef",
+      "sequence": 1,
+      "emitted_at": "2026-11-10T16:18:34.494569+00:00",
+      "run_id": "946fda478effbb2dbebdeceb2b23a9b404201fe2a5724f27941cd8498bfa5a99",
+      "turn_id": "fixture-request",
+      "research_id": "946fda478effbb2dbebdeceb2b23a9b404201fe2a5724f27941cd8498bfa5a99",
+      "revision": "fixture-candidate",
+      "type": "draft.upsert",
+      "block_id": "source-facebook",
+      "block_revision": 1,
+      "supersedes": [],
+      "source_key": "facebook",
+      "source_keys": [
+        "facebook"
+      ],
+      "discovery_channel": "facebook",
+      "role_key": "coordinator",
+      "text": "Síntesis de la fuente.",
+      "evidence_ids": [
+        "post-evidence",
+        "comment-evidence"
+      ],
+      "artifact_ids": [],
+      "status": "provisional",
+      "coverage": {},
+      "limitations": [
+        "Muestra acotada."
+      ]
+    },
+    "references": [
+      {
+        "evidence_id": "post-evidence",
+        "source": "facebook",
+        "discovery_channel": "facebook",
+        "url": "https://www.facebook.com/example/posts/123",
+        "requested_url": null,
+        "author_url": null,
+        "author_name": "Autor de ejemplo",
+        "source_title": "Anuncio de temporada",
+        "source_relation": "unknown",
+        "media": [],
+        "media_omitted_count": 0,
+        "media_content_analyzed": false,
+        "published_at": "2026-11-10T00:00:00+00:00",
+        "data_last_updated": null,
+        "observed_at": "2026-11-10T01:00:00+00:00",
+        "content_basis": "post_text",
+        "locator": null,
+        "document_sha256": null
+      },
+      {
+        "evidence_id": "comment-evidence",
+        "source": "facebook",
+        "discovery_channel": "facebook",
+        "url": "https://www.facebook.com/example/posts/123?comment_id=456",
+        "requested_url": "https://www.facebook.com/example/posts/123",
+        "author_url": null,
+        "author_name": null,
+        "source_title": null,
+        "source_relation": "unknown",
+        "media": [],
+        "media_omitted_count": 0,
+        "media_content_analyzed": false,
+        "published_at": "2026-11-10T00:00:00+00:00",
+        "data_last_updated": null,
+        "observed_at": "2026-11-10T01:00:00+00:00",
+        "content_basis": "comment_text",
+        "locator": null,
+        "document_sha256": null
+      }
+    ],
+    "artifacts": [],
+    "content_items": {
+      "schema_version": "1.0",
+      "revision": 1,
+      "items": [
+        {
+          "item_id": "item-fd4b9b31e70c95d0c3c44d2369117a8ea3aaa96daf9facb4d4a24dcea211b7fe",
+          "item_revision": 1,
+          "source_key": "facebook",
+          "kind": "post",
+          "primary_evidence_id": "post-evidence",
+          "evidence_ids": [
+            "post-evidence"
+          ],
+          "text": "El autor anunció una oferta de temporada.",
+          "content_basis": [
+            "post_text"
+          ],
+          "limitations": [
+            "Muestra acotada; no representa toda la conversación pública.",
+            "Es una muestra recuperada, sin representatividad poblacional."
+          ],
+          "comments_analysis": {
+            "status": "partial",
+            "parent_item_id": "item-fd4b9b31e70c95d0c3c44d2369117a8ea3aaa96daf9facb4d4a24dcea211b7fe",
+            "evidence_ids": [
+              "comment-evidence"
+            ],
+            "text": "En el comentario recuperado, una persona valoró la utilidad de la oferta.",
+            "analyzed_count": 1,
+            "limitations": [
+              "Muestra acotada; no representa toda la conversación pública.",
+              "Es una muestra recuperada, sin representatividad poblacional."
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "response": {
+    "protocol": "ai-market-intelligence",
+    "version": "2.0",
+    "kind": "response",
+    "request_id": "fixture-request",
+    "response": {
+      "status": "complete",
+      "markdown": "## Hallazgos\nSíntesis final de ejemplo.",
+      "references": [
+        {
+          "evidence_id": "post-evidence",
+          "source": "facebook",
+          "discovery_channel": "facebook",
+          "url": "https://www.facebook.com/example/posts/123",
+          "requested_url": null,
+          "author_url": null,
+          "author_name": "Autor de ejemplo",
+          "source_title": "Anuncio de temporada",
+          "source_relation": "unknown",
+          "media": [],
+          "media_omitted_count": 0,
+          "media_content_analyzed": false,
+          "published_at": "2026-11-10T00:00:00+00:00",
+          "data_last_updated": null,
+          "observed_at": "2026-11-10T01:00:00+00:00",
+          "content_basis": "post_text",
+          "locator": null,
+          "document_sha256": null
+        },
+        {
+          "evidence_id": "comment-evidence",
+          "source": "facebook",
+          "discovery_channel": "facebook",
+          "url": "https://www.facebook.com/example/posts/123?comment_id=456",
+          "requested_url": "https://www.facebook.com/example/posts/123",
+          "author_url": null,
+          "author_name": null,
+          "source_title": null,
+          "source_relation": "unknown",
+          "media": [],
+          "media_omitted_count": 0,
+          "media_content_analyzed": false,
+          "published_at": "2026-11-10T00:00:00+00:00",
+          "data_last_updated": null,
+          "observed_at": "2026-11-10T01:00:00+00:00",
+          "content_basis": "comment_text",
+          "locator": null,
+          "document_sha256": null
+        }
+      ],
+      "artifacts": []
+    },
+    "content_items": {
+      "schema_version": "1.0",
+      "revision": 1,
+      "items": [
+        {
+          "item_id": "item-fd4b9b31e70c95d0c3c44d2369117a8ea3aaa96daf9facb4d4a24dcea211b7fe",
+          "item_revision": 1,
+          "source_key": "facebook",
+          "kind": "post",
+          "primary_evidence_id": "post-evidence",
+          "evidence_ids": [
+            "post-evidence"
+          ],
+          "text": "El autor anunció una oferta de temporada.",
+          "content_basis": [
+            "post_text"
+          ],
+          "limitations": [
+            "Muestra acotada; no representa toda la conversación pública.",
+            "Es una muestra recuperada, sin representatividad poblacional."
+          ],
+          "comments_analysis": {
+            "status": "partial",
+            "parent_item_id": "item-fd4b9b31e70c95d0c3c44d2369117a8ea3aaa96daf9facb4d4a24dcea211b7fe",
+            "evidence_ids": [
+              "comment-evidence"
+            ],
+            "text": "En el comentario recuperado, una persona valoró la utilidad de la oferta.",
+            "analyzed_count": 1,
+            "limitations": [
+              "Muestra acotada; no representa toda la conversación pública.",
+              "Es una muestra recuperada, sin representatividad poblacional."
+            ]
+          }
+        }
+      ]
+    },
+    "references": [
+      {
+        "evidence_id": "post-evidence",
+        "source": "facebook",
+        "discovery_channel": "facebook",
+        "url": "https://www.facebook.com/example/posts/123",
+        "requested_url": null,
+        "author_url": null,
+        "author_name": "Autor de ejemplo",
+        "source_title": "Anuncio de temporada",
+        "source_relation": "unknown",
+        "media": [],
+        "media_omitted_count": 0,
+        "media_content_analyzed": false,
+        "published_at": "2026-11-10T00:00:00+00:00",
+        "data_last_updated": null,
+        "observed_at": "2026-11-10T01:00:00+00:00",
+        "content_basis": "post_text",
+        "locator": null,
+        "document_sha256": null
+      },
+      {
+        "evidence_id": "comment-evidence",
+        "source": "facebook",
+        "discovery_channel": "facebook",
+        "url": "https://www.facebook.com/example/posts/123?comment_id=456",
+        "requested_url": "https://www.facebook.com/example/posts/123",
+        "author_url": null,
+        "author_name": null,
+        "source_title": null,
+        "source_relation": "unknown",
+        "media": [],
+        "media_omitted_count": 0,
+        "media_content_analyzed": false,
+        "published_at": "2026-11-10T00:00:00+00:00",
+        "data_last_updated": null,
+        "observed_at": "2026-11-10T01:00:00+00:00",
+        "content_basis": "comment_text",
+        "locator": null,
+        "document_sha256": null
+      }
+    ]
+  },
+  "snapshot": {
+    "protocol": "ai-market-intelligence",
+    "version": "2.0",
+    "kind": "snapshot",
+    "request_id": "fixture-request",
+    "replay": {
+      "events": [],
+      "snapshot": {
+        "blocks": {
+          "source-facebook": {
+            "schema_version": "1.0",
+            "event_id": "f1670df52518866350bce02ee34b923c45957ef51a4634a7f29249816f6afbef",
+            "sequence": 1,
+            "emitted_at": "2026-11-10T16:18:34.494569+00:00",
+            "run_id": "946fda478effbb2dbebdeceb2b23a9b404201fe2a5724f27941cd8498bfa5a99",
+            "turn_id": "fixture-request",
+            "research_id": "946fda478effbb2dbebdeceb2b23a9b404201fe2a5724f27941cd8498bfa5a99",
+            "revision": "fixture-candidate",
+            "type": "draft.upsert",
+            "block_id": "source-facebook",
+            "block_revision": 1,
+            "supersedes": [],
+            "source_key": "facebook",
+            "source_keys": [
+              "facebook"
+            ],
+            "discovery_channel": "facebook",
+            "role_key": "coordinator",
+            "text": "Síntesis de la fuente.",
+            "evidence_ids": [
+              "post-evidence",
+              "comment-evidence"
+            ],
+            "artifact_ids": [],
+            "status": "provisional",
+            "coverage": {},
+            "limitations": [
+              "Muestra acotada."
+            ]
+          }
+        },
+        "activity": {},
+        "artifacts": {},
+        "response": {
+          "status": "complete",
+          "markdown": "## Hallazgos\nSíntesis final de ejemplo.",
+          "references": [
+            {
+              "evidence_id": "post-evidence",
+              "source": "facebook",
+              "discovery_channel": "facebook",
+              "url": "https://www.facebook.com/example/posts/123",
+              "requested_url": null,
+              "author_url": null,
+              "author_name": "Autor de ejemplo",
+              "source_title": "Anuncio de temporada",
+              "source_relation": "unknown",
+              "media": [],
+              "media_omitted_count": 0,
+              "media_content_analyzed": false,
+              "published_at": "2026-11-10T00:00:00+00:00",
+              "data_last_updated": null,
+              "observed_at": "2026-11-10T01:00:00+00:00",
+              "content_basis": "post_text",
+              "locator": null,
+              "document_sha256": null
+            },
+            {
+              "evidence_id": "comment-evidence",
+              "source": "facebook",
+              "discovery_channel": "facebook",
+              "url": "https://www.facebook.com/example/posts/123?comment_id=456",
+              "requested_url": "https://www.facebook.com/example/posts/123",
+              "author_url": null,
+              "author_name": null,
+              "source_title": null,
+              "source_relation": "unknown",
+              "media": [],
+              "media_omitted_count": 0,
+              "media_content_analyzed": false,
+              "published_at": "2026-11-10T00:00:00+00:00",
+              "data_last_updated": null,
+              "observed_at": "2026-11-10T01:00:00+00:00",
+              "content_basis": "comment_text",
+              "locator": null,
+              "document_sha256": null
+            }
+          ],
+          "artifacts": []
+        },
+        "status": "completed"
+      },
+      "cursor": 2
+    },
+    "response": {
+      "status": "complete",
+      "markdown": "## Hallazgos\nSíntesis final de ejemplo.",
+      "references": [
+        {
+          "evidence_id": "post-evidence",
+          "source": "facebook",
+          "discovery_channel": "facebook",
+          "url": "https://www.facebook.com/example/posts/123",
+          "requested_url": null,
+          "author_url": null,
+          "author_name": "Autor de ejemplo",
+          "source_title": "Anuncio de temporada",
+          "source_relation": "unknown",
+          "media": [],
+          "media_omitted_count": 0,
+          "media_content_analyzed": false,
+          "published_at": "2026-11-10T00:00:00+00:00",
+          "data_last_updated": null,
+          "observed_at": "2026-11-10T01:00:00+00:00",
+          "content_basis": "post_text",
+          "locator": null,
+          "document_sha256": null
+        },
+        {
+          "evidence_id": "comment-evidence",
+          "source": "facebook",
+          "discovery_channel": "facebook",
+          "url": "https://www.facebook.com/example/posts/123?comment_id=456",
+          "requested_url": "https://www.facebook.com/example/posts/123",
+          "author_url": null,
+          "author_name": null,
+          "source_title": null,
+          "source_relation": "unknown",
+          "media": [],
+          "media_omitted_count": 0,
+          "media_content_analyzed": false,
+          "published_at": "2026-11-10T00:00:00+00:00",
+          "data_last_updated": null,
+          "observed_at": "2026-11-10T01:00:00+00:00",
+          "content_basis": "comment_text",
+          "locator": null,
+          "document_sha256": null
+        }
+      ],
+      "artifacts": []
+    },
+    "artifacts": [],
+    "references": [
+      {
+        "evidence_id": "comment-evidence",
+        "source": "facebook",
+        "discovery_channel": "facebook",
+        "url": "https://www.facebook.com/example/posts/123?comment_id=456",
+        "requested_url": "https://www.facebook.com/example/posts/123",
+        "author_url": null,
+        "author_name": null,
+        "source_title": null,
+        "source_relation": "unknown",
+        "media": [],
+        "media_omitted_count": 0,
+        "media_content_analyzed": false,
+        "published_at": "2026-11-10T00:00:00+00:00",
+        "data_last_updated": null,
+        "observed_at": "2026-11-10T01:00:00+00:00",
+        "content_basis": "comment_text",
+        "locator": null,
+        "document_sha256": null
+      },
+      {
+        "evidence_id": "post-evidence",
+        "source": "facebook",
+        "discovery_channel": "facebook",
+        "url": "https://www.facebook.com/example/posts/123",
+        "requested_url": null,
+        "author_url": null,
+        "author_name": "Autor de ejemplo",
+        "source_title": "Anuncio de temporada",
+        "source_relation": "unknown",
+        "media": [],
+        "media_omitted_count": 0,
+        "media_content_analyzed": false,
+        "published_at": "2026-11-10T00:00:00+00:00",
+        "data_last_updated": null,
+        "observed_at": "2026-11-10T01:00:00+00:00",
+        "content_basis": "post_text",
+        "locator": null,
+        "document_sha256": null
+      }
+    ],
+    "content_items": {
+      "schema_version": "1.0",
+      "revision": 1,
+      "items": [
+        {
+          "item_id": "item-fd4b9b31e70c95d0c3c44d2369117a8ea3aaa96daf9facb4d4a24dcea211b7fe",
+          "item_revision": 1,
+          "source_key": "facebook",
+          "kind": "post",
+          "primary_evidence_id": "post-evidence",
+          "evidence_ids": [
+            "post-evidence"
+          ],
+          "text": "El autor anunció una oferta de temporada.",
+          "content_basis": [
+            "post_text"
+          ],
+          "limitations": [
+            "Muestra acotada; no representa toda la conversación pública.",
+            "Es una muestra recuperada, sin representatividad poblacional."
+          ],
+          "comments_analysis": {
+            "status": "partial",
+            "parent_item_id": "item-fd4b9b31e70c95d0c3c44d2369117a8ea3aaa96daf9facb4d4a24dcea211b7fe",
+            "evidence_ids": [
+              "comment-evidence"
+            ],
+            "text": "En el comentario recuperado, una persona valoró la utilidad de la oferta.",
+            "analyzed_count": 1,
+            "limitations": [
+              "Muestra acotada; no representa toda la conversación pública.",
+              "Es una muestra recuperada, sin representatividad poblacional."
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "empty_collection": {
+    "schema_version": "1.0",
+    "revision": 2,
+    "items": []
+  }
+}

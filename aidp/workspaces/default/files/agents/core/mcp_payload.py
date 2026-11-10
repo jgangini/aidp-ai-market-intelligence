@@ -2,6 +2,8 @@
 
 import json
 
+from .runtime_core import ProviderResponseInvalid
+
 
 def _protocol_text_blocks(value):
     return (
@@ -66,8 +68,24 @@ def _run_metadata(value):
         return {}
     aliases = [value[key] for key in ("_meta", "meta") if key in value]
     if len(aliases) == 2 and aliases[0] != aliases[1]:
-        raise ValueError("Conflicting MCP metadata aliases")
+        raise ProviderResponseInvalid("Conflicting MCP metadata aliases", {
+            "reason": "conflicting_mcp_metadata", **run_response_details(value),
+        })
     return {"_meta": aliases[0]} if aliases else {}
+
+
+def run_response_details(value):
+    shape = "scalar"
+    if isinstance(value, dict):
+        shape = next((label for key, label in (
+            ("structuredContent", "structured_content"), ("content", "content_blocks"),
+            ("payload", "metadata_payload"), ("status", "run_record"),
+        ) if key in value), "object")
+    elif isinstance(value, list):
+        shape = "list"
+    elif isinstance(value, str):
+        shape = "text"
+    return {"response_type": type(value).__name__, "response_shape": shape}
 
 
 def locate(value, names):

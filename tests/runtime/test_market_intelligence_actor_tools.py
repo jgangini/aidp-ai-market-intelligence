@@ -20,7 +20,7 @@ def test_catalogue_has_distinct_query_destination_and_financial_contracts_withou
 
     tools={tool['name']:tool for tool in actor_tool_specifications(['web','x','youtube','facebook','instagram','market_data','world_bank'])}
 
-    assert len(tools)==9
+    assert len(tools)==13
 
     assert 'query' in tools['facebook_search']['arguments_schema']['properties']
 
@@ -30,7 +30,9 @@ def test_catalogue_has_distinct_query_destination_and_financial_contracts_withou
 
     assert 'countries' in tools['world_bank']['arguments_schema']['properties']
 
-    assert 'instagram_search' not in tools
+    assert tools['instagram_search']['result_kind']=='keyword_posts'
+    assert tools['instagram_hashtag']['result_kind']=='hashtag_posts'
+    assert tools['facebook_comments']['result_kind']=='selected_post_comments'
 
     assert tools['instagram_posts']['result_kind']=='selected_destination_posts'
 
@@ -46,7 +48,8 @@ def test_catalogue_has_distinct_query_destination_and_financial_contracts_withou
 
         assert not {'actor','build','callOptions','token'}&tool['arguments_schema']['properties'].keys()
 
-    assert {tool['name'] for tool in actor_tool_specifications(['instagram'])}=={'web_search_serp','instagram_posts'}
+    assert {tool['name'] for tool in actor_tool_specifications(['instagram'])}=={
+        'web_search_serp','instagram_posts','instagram_search','instagram_hashtag','instagram_comments'}
 
 
 
@@ -66,7 +69,7 @@ def test_named_tool_executes_its_own_compiler_and_rejects_another_source_argumen
 
     result=asyncio.run(tool.ainvoke({'query':'Tiendas D1','max_items':3},window=WINDOW,executor=execute,unlimited=True))
 
-    assert result=={'receipt':'fixture'} and calls[0]['actor']=='apify/facebook-search-scraper'
+    assert result=={'receipt':'fixture'} and calls[0]['actor']=='scraper_one/facebook-posts-search'
 
     for invalid in ({'urls':['https://facebook.com/page'],'max_items':3},
 
@@ -150,7 +153,7 @@ def test_graph_source_selection_invokes_the_named_tool_and_its_admitted_executor
 
     assert names==['facebook_search'] and len(provider.starts)==1
 
-    assert provider.starts[0]['actor']=='apify/facebook-search-scraper'
+    assert provider.starts[0]['actor']=='scraper_one/facebook-posts-search'
 
     assert state['response']['status']=='complete'
 

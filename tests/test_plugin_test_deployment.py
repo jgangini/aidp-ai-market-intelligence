@@ -7,7 +7,7 @@ import pytest
 
 from ai_market_intelligence.errors import AidpProvisionConflict,AidpProvisionPending
 from ai_market_intelligence.installation.plugin_test import PluginTestDeployment
-from tests.test_maintenance import OP,FakeClient,FakeNative,candidate,NEW,client,run
+from tests.test_maintenance import OP,FakeClient,FakeNative,candidate,NEW,OLD,client,run,additive_candidate
 
 
 def driver_fixture(tmp_path):
@@ -53,11 +53,18 @@ def test_preparation_rejects_another_native_identity_before_writing_candidate(tm
 
 
 @pytest.mark.parametrize('applied',[False,True])
-def test_guarded_sync_accepts_verified_package_even_when_already_uploaded(tmp_path,applied):
+@pytest.mark.parametrize('addition',[False,True])
+def test_guarded_sync_accepts_verified_package_even_when_already_uploaded(tmp_path,applied,addition):
     from ai_market_intelligence.runtime.package_identity import file_hashes,inventory_digest
     driver=driver_fixture(tmp_path);state=FakeClient().saved
     files={**candidate(NEW),'agent-manifest.json':b'owner'}
     before={**candidate(NEW),'agent-manifest.json':b'old owner'}
+    if addition:
+        files['core/new_module.py'] = b'new module\n'
+        from ai_market_intelligence.runtime.package_identity import package_manifest
+        files.pop('package-manifest.json')
+        files['package-manifest.json'] = json.dumps(package_manifest({name: raw for name, raw in files.items()
+            if name != 'agent-manifest.json'})).encode()
     state['maintenance']={'operation_id':OP,'before_hashes':file_hashes(before),'target_hashes':file_hashes(files)}
     expected=inventory_digest(file_hashes(files));calls=[]
     def cli(*args):
@@ -66,11 +73,35 @@ def test_guarded_sync_accepts_verified_package_even_when_already_uploaded(tmp_pa
         guard=json.loads(path.read_bytes())
         assert guard['package_sha256']==expected
         assert set(guard['files'])==set(files)
+        if addition:
+            assert guard['files']['core/new_module.py'] == [file_hashes(files)['core/new_module.py']]
         return {'applied':applied,'readback_verified':True,'preconditions_checked':True,'package_sha256':expected}
     driver.cli=cli
     driver.sync_candidate(state,files)
     driver.sync_candidate(state,files)
     assert len(calls)==2
+
+
+def test_owner_creates_addition_before_plugin_sync_and_removes_it_before_rollback(additive_candidate):
+    client = additive_candidate
+    client.fail_new_probe = True
+    binding={'kind':'plugin_cli','project':'fixture-project','scripts':'fixture-scripts',
+             'scripts_sha256':'a'*64,'project_sha256':'b'*64}
+    class Driver(FakeNative):
+        deployment_driver='plugin_cli'
+        def driver_binding(self): return binding
+        def sync_candidate(self,state,files):
+            from ai_market_intelligence.maintenance import agent_root
+            path = agent_root(state) + '/core/new_module.py'
+            if 'core/new_module.py' in files:
+                assert client.files[path] == files['core/new_module.py']
+            else:
+                assert path not in client.files
+        def refresh(self,*args,metadata_descriptor,**kwargs):
+            return super().refresh(*args,**kwargs)
+        def reconcile_refresh(self,intent): return True
+    assert run(client, native_factory=lambda _: Driver(client))['status'] == 'rolled_back'
+    assert client.refreshes == [NEW, OLD]
 
 
 def test_plugin_failure_never_becomes_a_successful_owner_commit(client,tmp_path):

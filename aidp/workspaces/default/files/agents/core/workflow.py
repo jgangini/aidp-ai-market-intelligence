@@ -4,17 +4,27 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import threading
+import time
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from typing import TypedDict
+from uuid import uuid4
 
 from . import decisions
 from .contracts import FactualReview
-from .connectors import compile_keyword_query
+from .connectors import FACEBOOK_QUERY_MAX_LENGTH, compile_keyword_query
 from .actor_tools import actor_tool_specifications
-from .model import context_limitations, evidence_context
+from .model import context_limitations, evidence_context, content_units_context, content_items_context
+from .content_items import build_content_units, materialize_content_items
 from .media import model_evidence
-from .wire import market_reference_manifest
+from .wire import (
+    market_reference_manifest,
+    market_content_evidence_ids,
+    Market_TEXT_DELTA_LIMIT,
+    Market_TEXT_PACKET_LIMIT,
+    Market_TEXT_STREAM_LIMIT,
+)
 from .runtime_core import ProviderQueryRejected, digest
 from .artifacts import market_artifact_data, artifacts
 from .research_contracts import (
@@ -55,6 +65,93 @@ class MarketTurn(TypedDict, total=False):
     delivered: bool
 
 
+class _PublicTextGeneration:
+    """Bounded, transient public prose; canonical publications stay in the store."""
+
+    def __init__(self, owner, block_id, source, sources, writer):
+        self.owner, self.writer = owner, writer
+        self.loop = asyncio.get_running_loop()
+        self.thread_id = threading.get_ident()
+        value = owner.current()
+        self.identity = {
+            "request_id": value["request_id"], "turn_id": value["request_id"],
+            "stream_id": uuid4().hex, "block_id": block_id,
+            "block_revision": value["blocks"].get(block_id, {}).get("block_revision", 0) + 1,
+            "source_key": source, "source_keys": sources, "status": "provisional",
+        }
+        self.index = -1
+        self.parts = []
+        self.pending = self.total = 0
+        self.last_flush = time.monotonic()
+        self.ended = self.closed = False
+
+    def packet(self, phase, text=""):
+        self.index += 1
+        self.owner._public_text_packets += 1
+        self.writer({"_public_text": {
+            **self.identity, "phase": phase, "delta_index": self.index, "text": text,
+        }})
+
+    def on_delta(self, text):
+        if threading.get_ident() == self.thread_id:
+            self.feed(text)
+        else:
+            self.loop.call_soon_threadsafe(self.feed, text)
+
+    def feed(self, text):
+        if self.closed or self.ended:
+            return
+        if not isinstance(text, str) or self.total + len(text) > Market_TEXT_STREAM_LIMIT:
+            self.discard()
+            return
+        self.total += len(text)
+        for offset in range(0, len(text), Market_TEXT_DELTA_LIMIT):
+            if self.closed:
+                return
+            self.buffer_piece(text[offset:offset + Market_TEXT_DELTA_LIMIT])
+
+    def buffer_piece(self, piece):
+        if self.pending + len(piece) > Market_TEXT_DELTA_LIMIT:
+            self.flush()
+        if self.closed:
+            return
+        self.parts.append(piece)
+        self.pending += len(piece)
+        if self.index < 0 or self.pending >= 64 or time.monotonic() - self.last_flush >= 0.1:
+            self.flush()
+
+    def flush(self):
+        if self.closed or not self.pending:
+            return
+        # Every live stream retains room for end and a later factual withdrawal.
+        reserved = 2 * len(self.owner._public_texts)
+        if self.owner._public_text_packets >= Market_TEXT_PACKET_LIMIT - reserved - 2:
+            self.discard()
+            return
+        if self.index < 0:
+            self.packet("start")
+        self.packet("delta", "".join(self.parts))
+        self.parts.clear()
+        self.pending = 0
+        self.last_flush = time.monotonic()
+
+    def end(self):
+        self.flush()
+        if self.index >= 0 and not self.closed:
+            self.packet("end")
+        self.ended = True
+
+    def discard(self):
+        if self.closed:
+            return
+        if self.index >= 0:
+            self.packet("discard")
+        self.parts.clear()
+        self.pending = 0
+        self.closed = True
+        self.owner._public_texts.pop(self.identity["block_id"], None)
+
+
 class MarketWorkflow:
     def __init__(
         self,
@@ -89,6 +186,8 @@ class MarketWorkflow:
         self._worker_source = ContextVar("market_worker_source", default=None)
         self._worker_writer = ContextVar("market_worker_writer", default=None)
         self._decision_slots = asyncio.Semaphore(2)
+        self._public_text_packets = 0
+        self._public_texts = {}
         self.enabled_sources = tuple(enabled_sources)
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.conversation_context = copy.deepcopy(conversation_context or {})
@@ -124,16 +223,58 @@ class MarketWorkflow:
             collector.document_follow_allowed = self.document_follow_allowed
 
     async def ask(self, name, schema, payload, *, allowed_evidence=None):
+        from .model import PUBLIC_TEXT_DELTA
+
         self.check_cancelled()
         payload = model_evidence(payload)
         contract = schema.model_json_schema()
         decisions.configure_contract(name, contract, payload, allowed_evidence)
         async with self._decision_slots:
             self.check_cancelled()
-            result = await self.model.ask(name, contract, payload)
-        self.check_cancelled()
-        result = decisions.normalize_result(name, result, payload, contract)
-        return schema.model_validate(result).model_dump(mode="json")
+            generation = self.public_text_generation(name, payload)
+            sink = generation.on_delta if generation else (
+                (lambda text: None) if name in {"market_draft", "market_consolidate", "market_summarize"} else None
+            )
+            token = PUBLIC_TEXT_DELTA.set(sink)
+            try:
+                result = await self.model.ask(name, contract, payload)
+                if generation:
+                    await asyncio.sleep(0)  # Drain model-thread deltas before closing the stream.
+                self.check_cancelled()
+                result = decisions.normalize_result(name, result, payload, contract)
+                result = schema.model_validate(result).model_dump(mode="json")
+                if generation:
+                    generation.end()
+                return result
+            except BaseException:
+                if generation:
+                    generation.discard()
+                raise
+            finally:
+                PUBLIC_TEXT_DELTA.reset(token)
+
+    def public_text_generation(self, name, payload):
+        if name not in {"market_draft", "market_consolidate", "market_summarize"}:
+            return None
+        if self._public_text_packets >= Market_TEXT_PACKET_LIMIT - 2 * len(self._public_texts) - 4:
+            return None
+        from langgraph.config import get_stream_writer
+
+        evidence_sources = sorted({row["source"] for row in payload.get("evidence", [])})
+        source = (self._worker_source.get() or (evidence_sources[0] if len(evidence_sources) == 1 else None)) if name == "market_draft" else None
+        block_id = "source-" + source if source else "consolidated"
+        self.discard_public_text(block_id)
+        sources = [source] if source else evidence_sources
+        generation = _PublicTextGeneration(
+            self, block_id, source, sources, self._worker_writer.get() or get_stream_writer()
+        )
+        self._public_texts[block_id] = generation
+        return generation
+
+    def discard_public_text(self, block_id):
+        generation = self._public_texts.get(block_id)
+        if generation:
+            generation.discard()
 
     def check_cancelled(self):
         if self.current()["cancelled"]:
@@ -156,8 +297,18 @@ class MarketWorkflow:
     def emit(self, event_type, **values):
         from langgraph.config import get_stream_writer
 
+        if event_type in {"run.failed", "run.cancelled"}:
+            for block_id in list(self._public_texts):
+                self.discard_public_text(block_id)
         event = self.store.append(event_type, **values)
         (self._worker_writer.get() or get_stream_writer())(event)
+        if values.get("block_id") in self._public_texts:
+            generation = self._public_texts.pop(values["block_id"])
+            generation.closed = True
+        if event_type == "run.completed":
+            for generation in self._public_texts.values():
+                generation.closed = True
+            self._public_texts.clear()
         return event
 
     def build(self, checkpointer=None):
@@ -434,6 +585,8 @@ class MarketWorkflow:
             for identity in ids
         }
         self.store.save(evidence=evidence)
+        if response.get("content_items") is not None:
+            self.store.restore_content_items(response["content_items"])
         context = evidence_context(
             {
                 "question": state["question"],
@@ -470,6 +623,7 @@ class MarketWorkflow:
         )
         accepted = review["accepted"]
         if not accepted:
+            self.discard_public_text("consolidated")
             summary = {
                 "text": "La transformación solicitada no superó la verificación y no se publicó. El informe original permanece disponible en la conversación.",
                 "evidence_ids": [],
@@ -910,7 +1064,8 @@ class MarketWorkflow:
                 for row in value["collections"].get(key, {}).get("evidence", [])
             }
             evidence.sort(key=lambda row: row["evidence_id"] not in latest)
-        context = evidence_context(
+        units = build_content_units(evidence)
+        context = content_units_context(
             {
                 "question": value["question"],
                 "brief": value["brief"],
@@ -919,14 +1074,31 @@ class MarketWorkflow:
                 "source_query_contract": self.query_contracts().get(
                     state["task"]["source"], {}
                 ),
+                **({"retrieval_progress": {
+                    "read_batch": value.get("read_batches", {}).get(
+                        self.collection_keys(value, state["task"])[0], 0
+                    ),
+                    "status": value["collections"].get(key, {}).get("status"),
+                    "evidence_count": len(value["collections"].get(key, {}).get("evidence", [])),
+                    "limitations": value["collections"].get(key, {}).get("limitations", []),
+                }} if state["task"]["source"] == "web" else {}),
                 "computed_artifacts": market_artifact_data(
                     artifacts(evidence, status="provisional")
                 ),
             },
             model_evidence(evidence),
+            units,
         )
         allowed = {row["evidence_id"] for row in context["evidence"]}
         analysis = await decisions.analyze(self.ask, context, allowed_evidence=allowed)
+        admitted_units = {unit["unit_id"] for unit in context["content_units"]}
+        proposed = analysis.get("items", [])
+        if len({item["unit_id"] for item in proposed}) != len(proposed) or any(
+            item["unit_id"] not in admitted_units for item in proposed
+        ):
+            raise ValueError("Item summaries must name distinct admitted content units")
+        analysis["content_units"] = [unit for unit in units if unit["unit_id"] in admitted_units]
+        materialize_content_items(analysis["content_units"], proposed)
         for finding in analysis["findings"]:
             if not finding["supports"] or not set(
                 finding["supports"] + finding["refutes"]
@@ -949,6 +1121,7 @@ class MarketWorkflow:
             analysis["context_limitations"].append(
                 "Los importes cualificados se conservan como texto atribuido; no se convirtieron en puntos exactos ni variaciones calculadas."
             )
+        await self.review_content_items({**state, "analysis": analysis})
         return {"analysis": analysis}
 
     def query_contracts(self):
@@ -973,15 +1146,18 @@ class MarketWorkflow:
             },
             "facebook": {
                 "scope": "public_keyword_posts",
+                "comments": "per_pass_up_to_two_observed_relevant_posts_five_comments_each_reuse_identical_reads",
+                "maximum_query_characters": FACEBOOK_QUERY_MAX_LENGTH,
                 "boolean_or": False,
-                "date_filters": "client_only",
+                "date_filters": "provider_dates_and_exact_client_interval",
             },
             "instagram": {
-                "scope": "public_posts_from_selected_destinations",
-                "discovery": "web_search_then_public_post_reader",
-                "content_basis": "captions_and_post_text_not_comments_or_media",
+                "scope": "public_topic_posts_or_explicit_destinations",
+                "discovery": "keyword_and_literal_hashtag_search",
+                "content_basis": "post_text_and_attributed_comment_text_not_media_content",
+                "comments": "per_pass_up_to_two_observed_relevant_posts_five_comments_each_reuse_identical_reads",
                 "boolean_or": False,
-                "date_filters": "provider_and_client",
+                "date_filters": "exact_client_interval",
             },
             "web": {
                 "scope": "keywords",
@@ -1018,19 +1194,22 @@ class MarketWorkflow:
                 for identity in finding["supports"] + finding["refutes"]
             }
         )
-        block = await decisions.draft(self.ask, self.draft_context(state, ids))
-        self.check_block(block, ids)
+        context = self.draft_context(state, ids)
+        block = await decisions.draft(self.ask, context)
+        self.check_block(block, {row["evidence_id"] for row in context["evidence"]})
         return {"block": block}
 
     def draft_context(self, state, ids):
         value = self.decision_value()
+        items = [item for item in value.get("content_items", {}).get("items", [])
+                 if item["source_key"] == state["task"]["source"]]
+        ids = sorted(set(ids) | market_content_evidence_ids({"items": items}))
         evidence = [value["evidence"][identity] for identity in ids]
         facts = state["analysis"]["financial_facts"]
-        return {
+        context = content_items_context({
             "question": value["question"],
             "brief": value["brief"],
             "findings": state["analysis"]["findings"],
-            "evidence": evidence,
             "retrieved_inventory": self.retrieved_inventory(value),
             "financial_facts": facts,
             "computed_artifacts": market_artifact_data(
@@ -1039,7 +1218,11 @@ class MarketWorkflow:
                     status="provisional",
                 )
             ),
-        }
+        }, model_evidence(evidence), items)
+        allowed = {row["evidence_id"] for row in context["evidence"]}
+        context["findings"] = [finding for finding in context["findings"]
+                               if set(finding["supports"] + finding["refutes"]).issubset(allowed)]
+        return context
 
     def check_block(self, block, allowed):
         if not block["evidence_ids"] or not set(block["evidence_ids"]).issubset(
@@ -1082,6 +1265,7 @@ class MarketWorkflow:
         units=None,
         review_issues=(),
         rejected_block=None,
+        content_units=None,
     ):
         value = self.decision_value()
         evidence = [value["evidence"][identity] for identity in block["evidence_ids"]]
@@ -1093,6 +1277,7 @@ class MarketWorkflow:
         context = evidence_context(
             {
                 **({"block": block} if units is None else {"units": units}),
+                **({"content_units": content_units} if content_units is not None else {}),
                 "question": value["question"],
                 "brief": value["brief"],
                 **(
@@ -1163,6 +1348,7 @@ class MarketWorkflow:
         review = await self.review_block(block, facts)
         if review["accepted"]:
             return block, True
+        self.discard_public_text("source-" + state["task"]["source"])
         ids = sorted(
             {
                 identity
@@ -1317,6 +1503,8 @@ class MarketWorkflow:
                         "evidence_coverage": state["analysis"]["evidence_coverage"],
                     },
                 )
+            else:
+                self.discard_public_text(block_id)
             facts = [
                 fact
                 for fact in state["analysis"]["financial_facts"]
@@ -1325,8 +1513,61 @@ class MarketWorkflow:
             self.store.merge_source("financial_facts", state["task"]["source"], facts)
             self.publish_artifacts(self.current(), "provisional")
         else:
+            self.discard_public_text("source-" + state["task"]["source"])
             self.withdraw_stale_block(state)
         return {"block": block}
+
+    async def review_content_items(self, state):
+        source = state["task"]["source"]
+        proposed = state["analysis"].get("items", [])
+        previous = self.current().get("content_items")
+        if not proposed and not previous:
+            return
+        units = state["analysis"].get("content_units", [])
+        # Structural ownership is checked before any additional model request.
+        materialize_content_items(units, proposed)
+        accepted = []
+        batch, characters, identities = [], 0, set()
+        for draft in proposed:
+            if batch and (characters + len(draft["text"]) + 2 > 20000
+                          or len(identities | set(draft["evidence_ids"])) > 50):
+                accepted.extend(await self.review_item_batch(batch, units))
+                batch, characters, identities = [], 0, set()
+            batch.append(draft)
+            characters += len(draft["text"]) + 2
+            identities.update(draft["evidence_ids"])
+        if batch:
+            accepted.extend(await self.review_item_batch(batch, units))
+        collection = self.store.replace_content_items(source, units, accepted)
+        self.emit("source.coverage", role=state["task"]["role"],
+                  text="Las síntesis individuales admitidas conservan sus propias evidencias y límites.",
+                  coverage={"source": source, "items_reviewed": True,
+                            "content_revision": collection["revision"],
+                            "proposed_count": len(proposed), "accepted_count": len(accepted)})
+
+    async def review_item_batch(self, drafts, units):
+        block = MarketPublicBlock(
+            text="\n\n".join(item["text"] for item in drafts),
+            evidence_ids=sorted({identity for item in drafts for identity in item["evidence_ids"]}),
+            limitations=[],
+        ).model_dump(mode="json")
+        selected = {item["unit_id"] for item in drafts}
+        metadata = [{key: unit[key] for key in (
+            "unit_id", "item_id", "parent_item_id", "is_comments", "content_basis",
+        )} for unit in units if unit["unit_id"] in selected]
+        context, omitted = self.review_context(block, units=drafts, content_units=metadata)
+        if omitted:
+            if len(drafts) == 1:
+                return []
+            split = len(drafts) // 2
+            return [*await self.review_item_batch(drafts[:split], units),
+                    *await self.review_item_batch(drafts[split:], units)]
+        result = await decisions.verify_items(self.ask, context)
+        reviews = result["reviews"]
+        if len(reviews) != len(selected) or {r["unit_id"] for r in reviews} != selected:
+            raise ValueError("Every content unit requires exactly one review")
+        accepted = {review["unit_id"] for review in reviews if review["accepted"]}
+        return [draft for draft in drafts if draft["unit_id"] in accepted]
 
     def withdraw_stale_block(self, state):
         source = state["task"]["source"]
@@ -1477,18 +1718,17 @@ class MarketWorkflow:
 
     async def final_block(self, value, blocks, ids, artifacts):
         if ids:
-            final = await decisions.consolidate(
-                self.ask,
-                {
+            context = content_items_context({
                     "question": value["question"],
                     "brief": value["brief"],
                     "blocks": blocks,
                     "retrieved_inventory": self.retrieved_inventory(value),
-                    "evidence": [value["evidence"][identity] for identity in ids],
                     "artifacts": market_artifact_data(artifacts),
-                },
-            )
-            self.check_block(final, ids)
+                }, model_evidence([value["evidence"][identity] for identity in ids]),
+                value.get("content_items", {}).get("items", []))
+            allowed = {row["evidence_id"] for row in context["evidence"]}
+            final = await decisions.consolidate(self.ask, context)
+            self.check_block(final, allowed)
             facts = [
                 fact
                 for group in value.get("financial_facts", {}).values()
@@ -1497,6 +1737,7 @@ class MarketWorkflow:
             ]
             review = await self.review_block(final, facts)
             if not review["accepted"]:
+                self.discard_public_text("consolidated")
                 await self.review_preserved_blocks(blocks, final, review["issues"])
                 blocks = self.published_blocks(self.current())
                 ids = sorted(
@@ -1540,6 +1781,14 @@ class MarketWorkflow:
         return final
 
     @staticmethod
+    def readable_instant(value):
+        moment = market_moment(value)
+        months = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+                  "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+        return (f"{moment.day} de {months[moment.month - 1]} de {moment.year}, "
+                f"{moment:%H:%M:%S} {moment.tzname()}")
+
+    @staticmethod
     def report_text(value, text):
         brief = value["brief"]
         period_label = (
@@ -1555,7 +1804,8 @@ class MarketWorkflow:
         }
         sources = sorted({labels[row["source"]] for row in value["evidence"].values()})
         scope = (
-            f"{period_label}: {brief['start']} a {brief['end']}. "
+            f"{period_label}: del {MarketWorkflow.readable_instant(brief['start'])} "
+            f"al {MarketWorkflow.readable_instant(brief['end'])}. "
             f"Fuentes con evidencia: {', '.join(sources) or 'ninguna'}. "
             f"Evidencias recuperadas: {len(value['evidence'])}. "
             "El alcance se limita a estos resultados."
@@ -1703,6 +1953,7 @@ class MarketWorkflow:
         )
         reference_ids = sorted(
             set(final["evidence_ids"])
+            | market_content_evidence_ids(value.get("content_items", {}))
             | {
                 identity
                 for artifact in artifacts
@@ -1724,6 +1975,7 @@ class MarketWorkflow:
             }
         return {
             "status": "partial" if pending_or_incomplete or not ids else "complete",
+            **({"content_items": value["content_items"]} if "content_items" in value else {}),
             "kind": "research_report",
             "markdown": final["text"],
             "references": market_reference_manifest(value["evidence"], reference_ids),
@@ -1744,6 +1996,7 @@ class MarketWorkflow:
         blocks = self.published_blocks(value)
         ids = sorted(
             {identity for block in blocks for identity in block["evidence_ids"]}
+            | market_content_evidence_ids(value.get("content_items", {}))
         )
         artifacts = self.block_artifacts(value, "final")
         final = await self.final_block(value, blocks, ids, artifacts)
@@ -1791,4 +2044,11 @@ class MarketWorkflow:
             raise ValueError(
                 "No persisted final response or explicit pending result is available"
             )
+        if "content_items" in value and "content_items" not in response:
+            response = {**response, "content_items": value["content_items"]}
+        if "content_items" in response:
+            references = {row["evidence_id"]: row for row in response.get("references", [])}
+            references.update({row["evidence_id"]: row for row in market_reference_manifest(
+                value["evidence"], sorted(market_content_evidence_ids(response["content_items"])))})
+            response = {**response, "references": list(references.values())}
         return {"response": response, "delivered": True}

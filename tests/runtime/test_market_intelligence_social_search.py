@@ -1,24 +1,16 @@
-"""Separate keyword-post and popular-reel contracts, without external calls."""
+"""Keyword and hashtag post-search contracts, without external calls."""
 
 import copy
 
 import pytest
 
-
-
 from ai_market_intelligence.runtime.connectors import compile_call
 
 from ai_market_intelligence.runtime.social_search import facebook_search_observations, instagram_search_observations
 
-
-
 WINDOW={'start':'2026-10-27T10:00:00+00:00','end':'2026-11-03T10:00:00+00:00'}
 
 RECEIPT={'runId':'fixture-run'}
-
-
-
-
 
 def search_call(platform):
 
@@ -26,47 +18,35 @@ def search_call(platform):
 
                         WINDOW,None,unlimited=True)
 
-
-
-
-
 def facebook_row():
 
-    return {'facebookUrl':'https://www.facebook.com/search/top?q=Tiendas%20D1','searchType':'posts',
+    return {
 
         'postId':'123','url':'https://www.facebook.com/publisher/posts/123',
 
-        'text':'Una observación de un cliente sobre D1.','time':'2026-10-29T12:00:00Z',
+        'postText':'Una observación de un cliente sobre D1.','timestamp':1793275200000,
 
-        'likes':3,'comments':None,'shares':0,'user':{'name':'Observed writer'},
+        'reactionsCount':3,'commentsCount':None,'sharesCount':0,'user':{'name':'Observed writer'},
 
         'collaborators':[{'name':'A city, not a coauthor'}]}
-
-
-
-
 
 def instagram_row():
 
     return {'id':'123','type':'Video','productType':'clips','shortCode':'ABC123',
 
-        'url':'https://www.instagram.com/p/ABC123/','inputUrl':'https://www.instagram.com/popular/tiendas-d1',
+        'url':'https://www.instagram.com/p/ABC123/','inputUrl':'https://www.instagram.com/explore/search/keyword/?q=Tiendas%20D1',
 
         'caption':'Una descripción sobre Tiendas D1, sin transcripción.','timestamp':'2026-04-01T12:00:00Z',
 
         'ownerUsername':'another_creator','likesCount':10,'commentsCount':None,'mentions':['tiendas.d1']}
 
-
-
-
-
 def test_facebook_keyword_contract_retains_post_date_metrics_and_unknown_author_relationship():
 
     call=search_call('facebook')
 
-    assert call['actor']=='apify/facebook-search-scraper'
+    assert call['actor']=='scraper_one/facebook-posts-search'
 
-    assert call['input']=={'categories':['Tiendas D1'],'locations':[],'searchType':'posts','resultsLimit':3}
+    assert call['input']=={'query':'Tiendas D1','searchType':'latest','resultsCount':3,'startDate':'2026-10-27','endDate':'2026-11-03'}
 
     assert 'maxItems' not in call['callOptions'] and 'maxTotalChargeUsd' not in call['callOptions']
 
@@ -78,19 +58,13 @@ def test_facebook_keyword_contract_retains_post_date_metrics_and_unknown_author_
 
     assert row['provenance']['source_relation']=='unknown' and row['provenance']['comments_retrieved'] is False
 
-
-
-
-
-def test_instagram_popular_search_keeps_caption_owner_and_original_date_without_video_or_mention_attribution():
+def test_instagram_keyword_search_keeps_caption_owner_and_original_date_without_video_or_mention_attribution():
 
     call=search_call('instagram')
 
-    assert call['actor']=='apify/instagram-search-scraper'
+    assert call['actor']=='apify/instagram-hashtag-scraper'
 
-    assert call['input']=={'search':'Tiendas D1','searchType':'popular','searchLimit':3,'liveSearch':True,
-
-                           'enhanceUserSearchWithFacebookPage':False}
+    assert call['input']=={'hashtags':['Tiendas D1'],'keywordSearch':True,'resultsType':'posts','resultsLimit':3}
 
     row=instagram_search_observations([instagram_row()],RECEIPT,call)[0]
 
@@ -100,33 +74,21 @@ def test_instagram_popular_search_keeps_caption_owner_and_original_date_without_
 
     assert row['provenance']['source_relation']=='unknown'
 
-    assert row['provenance']['scope']=='instagram_popular_reels'
+    assert row['provenance']['scope']=='instagram_keyword_posts'
 
     assert row['provenance']['video_content_analyzed'] is row['provenance']['comments_retrieved'] is False
 
     assert row['metrics']['comments'] is None
 
-
-
-
-
 @pytest.mark.parametrize('platform,field,value',[
 
- ('facebook','facebookUrl','https://facebook.com/search/top?q=other'),
-
- ('facebook','facebookUrl','https://facebook.com.evil.example/search/top?q=Tiendas%20D1'),
-
- ('facebook','facebookUrl','https://facebook.com/search/top?q=Tiendas%20D1&q=other'),
-
- ('facebook','searchType','pages'),('facebook','url','https://facebook.com/a-profile'),
-
- ('facebook','likes',True),('facebook','comments',-1),('facebook','error','blocked'),
-
+ ('facebook','url','https://facebook.com/a-profile'),
+ ('facebook','reactionsCount',True),('facebook','commentsCount',-1),('facebook','error','blocked'),
  ('instagram','inputUrl','https://instagram.com/popular/other'),
 
  ('instagram','inputUrl','https://instagram.com.evil.example/popular/tiendas-d1'),
 
- ('instagram','shortCode','wrong'),('instagram','type','hashtag'),('instagram','productType','igtv'),
+ ('instagram','shortCode','wrong'),
 
  ('instagram','ownerUsername','not/a/profile'),('instagram','likesCount',True),('instagram','error','blocked')])
 
@@ -139,10 +101,6 @@ def test_search_parsers_reject_wrong_query_type_identity_metrics_and_errors(plat
     parse=facebook_search_observations if platform=='facebook' else instagram_search_observations
 
     with pytest.raises(ValueError):parse([row],RECEIPT,search_call(platform))
-
-
-
-
 
 @pytest.mark.parametrize('platform',['facebook','instagram'])
 
@@ -162,10 +120,6 @@ def test_search_parser_detects_duplicate_or_over_limit_rows_and_query_multiplier
 
         compile_call(platform+'_search',{'query':'D1, another query','urls':[],'max_items':3,'sort':'Latest'},WINDOW,None,unlimited=True)
 
-
-
-
-
 @pytest.mark.parametrize('code',['../accounts/login','a/b','%2e%2e%2faccounts','..'])
 
 def test_instagram_shortcode_cannot_escape_the_public_media_route(code):
@@ -175,10 +129,6 @@ def test_instagram_shortcode_cannot_escape_the_public_media_route(code):
     with pytest.raises(ValueError,match='media identity'):
 
         instagram_search_observations([row],RECEIPT,search_call('instagram'))
-
-
-
-
 
 @pytest.mark.parametrize('url',[
 
@@ -200,7 +150,7 @@ def test_facebook_search_accepts_observed_public_post_routes_without_changing_pr
 
     result=facebook_search_observations([row],RECEIPT,search_call('facebook'))
 
-    assert len(result)==1 and result[0]['text']==row['text']
+    assert len(result)==1 and result[0]['text']==row['postText']
 
     assert result[0]['url'].startswith('https://facebook.com/')
 
@@ -209,10 +159,6 @@ def test_facebook_search_accepts_observed_public_post_routes_without_changing_pr
         from ai_market_intelligence.runtime.social import social_url
 
         with pytest.raises(ValueError):social_url(url,'facebook')
-
-
-
-
 
 @pytest.mark.parametrize('url',[
 
@@ -248,13 +194,9 @@ def test_facebook_search_rejects_unreviewed_routes_and_permalink_parameters(url)
 
         facebook_search_observations([{**facebook_row(),'url':url}],RECEIPT,search_call('facebook'))
 
-
-
-
-
 def test_instagram_known_empty_query_marker_is_empty_data_not_a_failed_capture():
 
-    route='https://www.instagram.com/popular/tiendas-d1'
+    route='https://www.instagram.com/explore/search/keyword/?q=Tiendas%20D1'
 
     row={'inputUrl':route,'url':route,'error':'no_items',
 
@@ -269,10 +211,6 @@ def test_instagram_known_empty_query_marker_is_empty_data_not_a_failed_capture()
         with pytest.raises(ValueError):
 
             instagram_search_observations([{**row,**patch}],RECEIPT,search_call('instagram'))
-
-
-
-
 
 @pytest.mark.parametrize('platform',['facebook','instagram'])
 
@@ -290,7 +228,7 @@ def test_valid_identity_without_caption_is_omitted_with_visible_coverage(platfor
 
     if platform=='facebook':
 
-        empty.update(postId='456',url='https://facebook.com/publisher/posts/456',text=None)
+        empty.update(postId='456',url='https://facebook.com/publisher/posts/456',postText=None)
 
     else:
 
@@ -312,12 +250,11 @@ def test_valid_identity_without_caption_is_omitted_with_visible_coverage(platfor
 
     assert any('sin texto recuperado' in limit for limit in collection['limitations'])
 
-    invalid={**empty,('facebookUrl' if platform=='facebook' else 'inputUrl'):'https://evil.example/other'}
+    invalid={**empty,('url' if platform=='facebook' else 'inputUrl'):'https://evil.example/other'}
 
     parse=facebook_search_observations if platform=='facebook' else instagram_search_observations
 
     with pytest.raises(ValueError):parse([good,invalid],RECEIPT,search_call(platform))
-
 
 def test_instagram_observed_unavailable_like_count_preserves_caption_and_unknown_metric():
     row={**instagram_row(),'likesCount':-1}
@@ -327,4 +264,4 @@ def test_instagram_observed_unavailable_like_count_preserves_caption_and_unknown
         with pytest.raises(ValueError):
             instagram_search_observations([{**row,field:value}],RECEIPT,search_call('instagram'))
     with pytest.raises(ValueError):
-        facebook_search_observations([{**facebook_row(),'likes':-1}],RECEIPT,search_call('facebook'))
+        facebook_search_observations([{**facebook_row(),'reactionsCount':-1}],RECEIPT,search_call('facebook'))

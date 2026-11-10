@@ -7,11 +7,12 @@ import json
 import re
 from urllib.parse import parse_qs, urlsplit
 
-from .mcp_payload import unpack, unpack_run, locate, dataset_id, _protocol_text_blocks
+from .mcp_payload import unpack, unpack_run, locate, dataset_id, _protocol_text_blocks, run_response_details
 from .runtime_core import public_url
 from .finance import ACTORS, normalize_finance
 from .runtime_core import (
     ProviderReceiptUnverified,
+    ProviderResponseInvalid,
     ProviderStartRejected,
     ProviderStartResponseError,
     ProviderStatusUnavailable,
@@ -20,6 +21,9 @@ from .serp import SERP_ACTOR, serp_observations
 from .social import SOCIAL_ACTORS, social_observations, instagram_unavailable_destination
 from .social_search import (
     SOCIAL_SEARCH_ACTORS,
+    COMMENT_ACTORS,
+    comment_observations,
+    instagram_search_rows,
     facebook_search_observations,
     instagram_search_observations,
 )
@@ -65,16 +69,18 @@ def _provider_dataset_arguments(receipt, call):
         )
     elif call["actor"] in SOCIAL_ACTORS.values():
         arguments["fields"] = (
-            "url,inputUrl,facebookUrl,ownerUsername,coauthorProducers,caption,text,time,timestamp,likesCount,commentsCount,sharesCount,type,media,displayUrl,videoUrl,images,childPosts,error,errorDescription,requestErrorMessages,isError"
+            "url,inputUrl,facebookUrl,username,ownerUsername,coauthorProducers,caption,text,time,timestamp,likesCount,commentsCount,sharesCount,type,media,displayUrl,videoUrl,images,childPosts,error,errorDescription,requestErrorMessages,isError"
         )
     elif call["actor"] == SOCIAL_SEARCH_ACTORS["facebook"]:
         arguments["fields"] = (
-            "url,facebookUrl,searchType,postId,text,time,timestamp,likes,comments,shares,media,error,errorDescription,requestErrorMessages,isError"
+            "url,postId,postText,timestamp,reactionsCount,commentsCount,sharesCount,author,attachments,error,errorDescription,requestErrorMessages,isError"
         )
     elif call["actor"] == SOCIAL_SEARCH_ACTORS["instagram"]:
         arguments["fields"] = (
             "id,type,productType,shortCode,url,inputUrl,ownerUsername,caption,timestamp,likesCount,commentsCount,displayUrl,videoUrl,images,childPosts,error,errorDescription,requestErrorMessages,isError"
         )
+    elif call["actor"] in COMMENT_ACTORS.values():
+        arguments["fields"] = "commentUrl,inputUrl,facebookUrl,postUrl,text,date,timestamp,commentId,id,threadingDepth,replies,error,errorDescription,requestErrorMessages,isError"
     return arguments
 
 
@@ -217,6 +223,11 @@ class ApifyProvider:
     async def invoke(self, name, arguments):
         raw = await self.tools[name].ainvoke(arguments)
         # The installed SDK can render ToolException as a prefixed root string.
+        if (name == "get-actor-run" and type(raw) is str
+                and raw.startswith("MCP tool 'get-actor-run' invocation failed: ")):
+            error = ProviderStatusUnavailable("The SDK could not read the existing actor status")
+            error.reason = "sdk_status_invocation_failed"
+            raise error
         if name == "call-actor" and _root_start_rejection(raw, arguments):
             raise ProviderStartRejected(_rejected_start_diagnostic(raw, arguments))
         _check_mcp_protocol(raw)
@@ -226,6 +237,12 @@ class ApifyProvider:
                 if name in {"call-actor", "get-actor-run"}
                 else unpack(raw)
             )
+        except ProviderResponseInvalid:
+            raise
+        except ValueError:
+            raise ProviderResponseInvalid("Invalid MCP content envelope", {
+                "reason": "invalid_mcp_envelope", **run_response_details(raw),
+            }) from None
         except RuntimeError:
             # The local decoder raises RuntimeError only for protocol error envelopes.
             raise ProviderMCPError("MCP returned an error envelope") from None
@@ -250,8 +267,19 @@ class ApifyProvider:
             if expected_id is None or item["runId"] == expected_id
         ]
         if len(matches) != 1:
-            raise ValueError(
-                "Provider run identity and status could not be verified together"
+            diagnostic = {
+                "reason": "ambiguous_run_receipt" if len(matches) > 1 else
+                          "unexpected_run_identity" if records else "missing_run_receipt",
+                **run_response_details(payload),
+                "record_count": len(records), "match_count": len(matches),
+            }
+            if isinstance(payload, dict) and "status" in payload:
+                status = payload["status"]
+                diagnostic["provider_status"] = status if isinstance(status, str) and status in {
+                    "READY", "RUNNING", "SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT",
+                } else "unrecognized"
+            raise ProviderResponseInvalid(
+                "Provider run identity and status could not be verified together", diagnostic
             )
         run = matches[0]
         identity = run["runId"]
@@ -341,6 +369,7 @@ class ApifyProvider:
         if call["actor"] in {
             *SOCIAL_ACTORS.values(),
             *SOCIAL_SEARCH_ACTORS.values(),
+            *COMMENT_ACTORS.values(),
             "apidojo/twitter-scraper-lite",
         }:
             return _social_result(rows, receipt, call)
@@ -384,7 +413,7 @@ class ApifyProvider:
 
     async def facebook_rows(self, arguments, call):
         # Native video metadata is large. Page the same dataset, without starting captures.
-        maximum = call["callOptions"].get("maxItems", call["input"].get("resultsLimit"))
+        maximum = call["callOptions"].get("maxItems", call["input"].get("resultsLimit", call["input"].get("resultsCount")))
         if type(maximum) is not int or not 1 <= maximum <= 50:
             raise ValueError("Facebook requires a bounded dataset read")
         rows = []
@@ -402,7 +431,7 @@ class ApifyProvider:
         return rows
 
 
-def _social_result(rows, receipt, call):
+def _admitted_social_rows(rows, call):
     unavailable = []
     if call["actor"] == SOCIAL_ACTORS["instagram"]:
         if len(rows) > call["input"]["resultsLimit"] * len(call["input"]["username"]):
@@ -415,23 +444,37 @@ def _social_result(rows, receipt, call):
             else:
                 unavailable.append(destination)
         rows = admitted
-    if call["actor"] in SOCIAL_ACTORS.values():
-        items = social_observations(rows, receipt, call)
-    elif call["actor"] == SOCIAL_SEARCH_ACTORS["facebook"]:
-        items = facebook_search_observations(rows, receipt, call)
-    elif call["actor"] == SOCIAL_SEARCH_ACTORS["instagram"]:
-        items = instagram_search_observations(rows, receipt, call)
-    else:
-        items = _x_observations(rows, receipt, call)
     coverage = {"unavailable_social_destinations": unavailable} if unavailable else None
-    if unavailable and not items:
+    if call["actor"] == SOCIAL_SEARCH_ACTORS["instagram"]:
+        rows, unavailable_routes = instagram_search_rows(rows, call)
+        if unavailable_routes:
+            coverage = {**(coverage or {}), "unavailable_search_routes": unavailable_routes}
+    return rows, coverage
+
+
+def _social_observations(rows, receipt, call):
+    if call["actor"] in COMMENT_ACTORS.values():
+        return comment_observations(rows, receipt, call)
+    if call["actor"] in SOCIAL_ACTORS.values():
+        return social_observations(rows, receipt, call)
+    if call["actor"] == SOCIAL_SEARCH_ACTORS["facebook"]:
+        return facebook_search_observations(rows, receipt, call)
+    if call["actor"] == SOCIAL_SEARCH_ACTORS["instagram"]:
+        return instagram_search_observations(rows, receipt, call)
+    return _x_observations(rows, receipt, call)
+
+
+def _social_result(rows, receipt, call):
+    rows, coverage = _admitted_social_rows(rows, call)
+    items = _social_observations(rows, receipt, call)
+    if (coverage or {}).get("unavailable_social_destinations") and not items:
         coverage["provider_result_error"] = "instagram_destination_unavailable"
     if call["actor"] in SOCIAL_SEARCH_ACTORS.values() and not any(
         row.get("error") == "no_items" for row in rows
     ):
         omitted = len(rows) - len(items)
         if omitted:
-            coverage = {"omitted_textless_items": omitted}
+            coverage = {**(coverage or {}), "omitted_textless_items": omitted}
     return ObservationResult(items, receipt.get("spent_microusd"), coverage)
 
 

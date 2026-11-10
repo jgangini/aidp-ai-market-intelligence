@@ -10,6 +10,7 @@ from pydantic import Field, field_validator, model_validator
 from .contracts import Output, FinancialMetrics, Finding, FactualReview, Short
 from .runtime_core import public_url
 from .media import MediaAsset
+from .content_items import ContentItemSummaryDraft
 
 
 MarketSource = Literal[
@@ -118,7 +119,9 @@ class MarketTask(Output):
     role: MarketRole
     query: Annotated[str, Field(max_length=500)]
     urls: Annotated[list[Short], Field(max_length=3)]
-    purpose: Short
+    purpose: Annotated[Short, Field(
+        description="Source-specific research objective and material scope; be concise and follow the schema length limit."
+    )]
 
     @field_validator("urls")
     @classmethod
@@ -195,6 +198,7 @@ class MarketEvidence(Output):
         "page_text",
         "pdf_text",
         "post_text",
+        "comment_text",
         "media_metadata",
         "title_and_description",
         "search_title_and_snippet",
@@ -292,6 +296,7 @@ class MarketAnalysis(Output):
     financial_facts: Annotated[list[MarketFinancialFact], Field(max_length=20)] = Field(
         default_factory=list
     )
+    items: Annotated[list[ContentItemSummaryDraft], Field(max_length=50)] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def justified_refinement(self):

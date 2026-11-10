@@ -1,4 +1,5 @@
 from ai_market_intelligence.runtime.decisions.research import bind_queries
+
 import copy
 from pathlib import Path
 import json
@@ -87,6 +88,25 @@ def test_model_supplies_keyword_concepts_and_backend_builds_source_specific_quer
     assert collector.calls[0]['task']['query']=='("Tiendas D1" OR "tiendasd1") ("queja" OR "reclamo")'
     assert collector.calls[1]['task']['query']=='"Tiendas D1" "queja"'
     assert store.read()[0]['plan']['tasks'][0]['query']==collector.calls[0]['task']['query']
+
+
+@pytest.mark.parametrize('length', [500, 501])
+def test_plan_purpose_boundary_keeps_invalid_output_before_collection(length):
+    store,model,collector,graph=market_fixture()
+    original=model.ask
+    async def ask(name,schema,payload):
+        result=await original(name,schema,payload)
+        if name=='market_plan':
+            result['tasks'][0]['purpose']='a'*length
+        return result
+    model.ask=ask
+    _,state=market_run(graph)
+    if length==500:
+        assert state['response']['status']=='complete' and collector.calls
+    else:
+        assert state['response']['status']=='failed' and not collector.calls
+        assert store.read()[0]['events'][-1]['coverage']['stage']=='plan'
+        assert model.calls.count('market_plan')==1
 
 
 @pytest.mark.parametrize('source',['web','financial_document'])
@@ -320,3 +340,28 @@ def test_source_choice_schema_is_bound_to_this_candidate_set_and_can_abstain():
     assert asyncio.run(flow.select_sources({'source':'web'}, {},[
         {'candidate_id':'candidate-1','url':'https://example.org/1','text':'Company description'},
         {'candidate_id':'candidate-2','url':'https://example.org/2','text':'Dated corporate report'}]))==[]
+
+
+
+def test_facebook_compiled_query_limit_is_checked_before_capture():
+    from ai_market_intelligence.runtime.connectors import FACEBOOK_QUERY_MAX_LENGTH
+    valid = {'groups': [['a' * 40], ['b' * 40], ['c' * 18]]}
+    invalid = {'groups': [['a' * 40], ['b' * 40], ['c' * 19]]}
+    result = bind_queries('market_plan', {'tasks': [{'source': 'facebook', 'query': valid}]}, {})
+    assert len(result['tasks'][0]['query']) == FACEBOOK_QUERY_MAX_LENGTH
+    result = bind_queries('market_plan', {'tasks': [{'source': 'facebook', 'query': invalid}]}, {})
+    assert result['tasks'][0]['query'] == ''
+    result = bind_queries('market_analyze', {'refinement_query': invalid}, {'task': {'source': 'facebook'}})
+    assert result['refinement_query'] is None and result['gap']
+
+
+def test_social_query_contracts_match_topic_and_comment_collectors():
+    from ai_market_intelligence.runtime.connectors import FACEBOOK_QUERY_MAX_LENGTH
+    from ai_market_intelligence.runtime.workflow import MarketWorkflow
+    flow = object.__new__(MarketWorkflow)
+    flow.enabled_sources = ('facebook', 'instagram')
+    contracts = flow.query_contracts()
+    assert contracts['facebook']['maximum_query_characters'] == FACEBOOK_QUERY_MAX_LENGTH
+    assert contracts['instagram']['discovery'] == 'keyword_and_literal_hashtag_search'
+    assert contracts['instagram']['content_basis'] == 'post_text_and_attributed_comment_text_not_media_content'
+    assert contracts['facebook']['comments'] == contracts['instagram']['comments']

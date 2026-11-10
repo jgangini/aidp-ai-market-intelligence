@@ -126,7 +126,8 @@ class PluginTestDeployment(MarketPlaygroundClient):
         journal = state['maintenance']
         package = inventory_digest(file_hashes(files))
         expected = {'version': 1, 'package_sha256': package, 'files': {
-            name: sorted({journal['before_hashes'][name], journal['target_hashes'][name]}) for name in files}}
+            name: sorted({side[name] for side in (journal['before_hashes'], journal['target_hashes']) if name in side})
+            for name in files}}
         path = folder.parent / 'expected-existing.json'
         if path.exists() and json.loads(path.read_bytes()) != expected:
             raise AidpProvisionConflict('The saved source preconditions changed; preserve the operation.')

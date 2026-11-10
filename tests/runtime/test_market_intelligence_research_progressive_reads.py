@@ -69,6 +69,43 @@ def test_empty_selection_does_not_advance_an_unproductive_read_cursor():
     assert store.read()[0]['read_batches']=={} and state['response']['status']=='partial'
 
 
+def test_empty_later_selection_reaches_analysis_and_can_refine_without_rereading():
+    provider,effects,_,store,model,graph=progressive_fixture()
+    original_ask,original_observations=model.ask,provider.observations
+    selections=[]
+    progress=[]
+
+    async def observations(receipt,call,**kwargs):
+        result=await original_observations(receipt,call,**kwargs)
+        if 'scraperlink/' in call['actor'] and 'attribution' in call['input']['keyword']:
+            result.items=[{'url':'https://example.com/refined','text':'Relevant published mention'}]
+        elif 'startUrls' in call['input'] and call['input']['startUrls'][0]['url'].endswith('/refined'):
+            result.items[0]['text']='TEST_ONLY_ATTRIBUTION'
+        return result
+
+    async def ask(name,schema,payload):
+        if name=='market_select_sources':
+            selections.append(payload)
+            return {'candidate_ids':[] if len(selections)==2 else [payload['candidates'][0]['candidate_id']]}
+        if name=='market_analyze':
+            progress.append(payload['retrieval_progress'])
+            result=await original_ask(name,schema,payload)
+            if not result['findings']:
+                result['refinement_query']=({'groups':[['Fixture'],['attribution']]}
+                    if payload['retrieval_progress']['status']=='unavailable' else None)
+            return result
+        return await original_ask(name,schema,payload)
+
+    provider.observations=observations;model.ask=ask
+    _,state=market_run(graph())
+    assert [row['status'] for row in progress]==['complete','unavailable','complete']
+    assert [row['evidence_count'] for row in progress]==[1,0,1]
+    assert state['response']['references'] and len(effects.reserved_read_urls())==2
+    assert sum('scraperlink/' in call['actor'] for call in provider.starts)==2
+    assert len(set(effects.reserved_read_urls()))==2
+    assert store.read()[0]['refinements']=={'web':'Falta la atribución pedida.'}
+
+
 def test_second_batch_interruption_recovers_the_same_receipt_and_selection():
     provider,effects,_,store,_,graph=progressive_fixture(found_at=3)
     read=provider.read;pause=[True]

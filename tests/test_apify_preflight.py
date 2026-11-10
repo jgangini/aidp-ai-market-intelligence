@@ -65,7 +65,7 @@ def test_all_canonical_profiles_use_exact_actor_and_build_without_starting_runs(
     assert result['account'] == {'status': 'authenticated'}
     assert result['reads_verified'] is True and result['apify_starts'] == 0
     assert result['execution_permission'] == 'not_verified'
-    assert len(result['actors']) == len(PROFILES) == 13
+    assert len(result['actors']) == len(PROFILES) == 16
     for row in result['actors']:
         profile = PROFILES[row['profile']]
         assert row['actor_id'] == profile['actor_id'] and row['build'] == profile['build']

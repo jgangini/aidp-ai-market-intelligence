@@ -2,6 +2,7 @@
 
 from ..contracts import FactualReview
 from ..research_contracts import MarketRepairReview
+from ..content_items import ContentItemsReview
 
 VERIFY_ID = "market_verify"
 VERIFY_PROMPT = """Comprueba el soporte factual material del bloque; devuelve accepted=true sólo sin issues. Cada \
@@ -117,3 +118,19 @@ el contenido útil que sí tenga soporte."""
 async def verify_repair(ask, payload, **kwargs):
     """Use the shared validation/effect boundary with this decision's contract."""
     return await ask(VERIFY_REPAIR_ID, MarketRepairReview, payload, **kwargs)
+
+
+VERIFY_ITEMS_ID = "market_verify_items"
+VERIFY_ITEMS_PROMPT = VERIFY_REPAIR_PROMPT + """
+Estas units son síntesis individuales, no una reparación. Su unit_id es una identidad opaca
+del servidor. Juzga cada texto y sus limitaciones por separado con sus propios evidence_ids.
+content_units identifica base analizada y relación padre: el texto del autor y los comentarios
+no son intercambiables. No admitas interpretación audiovisual a partir de títulos/descripciones,
+autores inventados, sentimiento global o representatividad de una muestra de comentarios.
+Una implicación comercial debe identificar su soporte y mantener su carácter condicional.
+Devuelve exactamente una review por unit_id, aunque rechaces otras unidades del mismo lote.
+"""
+
+
+async def verify_items(ask, payload, **kwargs):
+    return await ask(VERIFY_ITEMS_ID, ContentItemsReview, payload, **kwargs)

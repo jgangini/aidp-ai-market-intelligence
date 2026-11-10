@@ -4,6 +4,56 @@ import copy
 
 import pytest
 
+
+def test_serp_calendar_bounds_survive_actor_ignoring_tbs_and_do_not_double_on_receipt_validation():
+    from ai_market_intelligence.runtime.serp import compile_serp_input, serp_observations, serp_receipt_matches
+    from ai_market_intelligence.runtime.runtime_core import digest
+    localized={'query':'Fixture Colombia noticias','maxResults':10,'countryCode':'CO',
+               'languageCode':'es','dateFrom':'2026-12-31','dateTo':'2027-01-01'}
+    inputs=compile_serp_input(localized)
+    assert inputs['keyword']=='Fixture Colombia noticias after:2026-12-30 before:2027-01-02'
+    call={'actor':'scraperlink/google-search-results-serp-scraper','input':inputs,
+          'callOptions':{'maxItems':1,'build':'0.0.92'}}
+    page={'page_number':1,'search_term':inputs['keyword'],'results':[
+        {'position':1,'url':'https://example.com/story','title':'Published mention','description':'Text',
+         'date':'hace 2 días'}]}
+    item,=serp_observations([page],'known-run',call)
+    assert item['provenance']['query']==localized['query']
+    assert item['provenance']['effective_query']==inputs['keyword']
+    assert item['published_at'] is None
+    tool={'source_key':'apify','target_id':'serp','provider_run_id':'known-run',
+          'request_hash':digest({'source_key':'apify','target_id':'serp','arguments':call})}
+    requested={k:v for k,v in localized.items() if k not in {'query','maxResults'}}
+    assert serp_receipt_matches(item['provenance'],tool,{'search_call':call},requested,
+                                {'actor':call['actor'],'build':'0.0.92'})
+    navigation=compile_serp_input({k:v for k,v in localized.items() if k not in {'dateFrom','dateTo'}})
+    assert navigation['keyword']==localized['query'] and 'tbs' not in navigation
+
+
+def test_provider_appended_before_is_bound_to_requested_tbs_and_preserved_as_provenance():
+    call=search_call()
+    page={'page_number':1,'search_term':call['input']['keyword']+' before:2026-11-02','results':[
+        {'position':1,'url':'https://example.com/news','title':'A mention','description':'Text'}]}
+    item,=serp_observations([page],'known-run',call)
+    assert item['provenance']['provider_date_suffix']==' before:2026-11-02'
+    assert item['provenance']['filter_verification']=='not_reported_by_provider'
+    assert item['published_at'] is None
+    for suffix in (' before:2026-11-03',' before:2026-11-01',' after:2026-10-26'):
+        with pytest.raises(ValueError):
+            serp_observations([{**page,'search_term':call['input']['keyword']+suffix}],'known-run',call)
+
+
+def test_spelling_suggestion_cannot_rewrite_controller_date_operators():
+    from ai_market_intelligence.runtime.serp import serp_query
+    call=search_call();requested=call['input']['keyword'];tbs=call['input']['tbs']
+    for changed in (requested.replace('before:2026-11-03','before:2026-11-04'),
+                    requested.replace('after:2026-10-26','after:2026-10-25')):
+        assert changed!=requested
+        with pytest.raises(ValueError):
+            serp_query({'search_term':changed,'related_keywords':{'spelling_suggestion':changed}},requested,tbs)
+    corrected=requested.replace('reclamaciones','reclamacione')
+    assert serp_query({'search_term':corrected,'related_keywords':{'spelling_suggestion':corrected}},requested,tbs)==corrected
+
 from ai_market_intelligence.runtime.runtime_core import ConnectorUnavailable
 from ai_market_intelligence.runtime.serp import serp_observations
 from tests.runtime.test_market_intelligence_payload import provider_for

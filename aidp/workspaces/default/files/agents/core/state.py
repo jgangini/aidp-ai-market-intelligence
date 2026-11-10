@@ -6,6 +6,7 @@ import copy
 
 from .runtime_core import Conflict, digest, encoded, utc_now
 from .research_contracts import MarketEvent
+from .content_items import materialize_content_items, item_fingerprint, validate_content_items
 
 
 class MarketCancelled(RuntimeError):
@@ -174,6 +175,31 @@ class MarketRunStore:
             value[field][source] = copy.deepcopy(result)
 
         self.transact(merge)
+
+    def replace_content_items(self, source, units, drafts):
+        def replace(value):
+            collection = materialize_content_items(units, drafts,
+                previous=value.get("content_items"), replace_sources=[source],
+                revision_history=value.get("content_item_revisions"))
+            history = value.setdefault("content_item_revisions", {})
+            for item in collection["items"]:
+                history[item["item_id"]] = {"item_revision": item["item_revision"],
+                                            "fingerprint": item_fingerprint(item)}
+            value["content_items"] = collection
+            return copy.deepcopy(collection)
+
+        return self.transact(replace)
+
+    def restore_content_items(self, collection):
+        def restore(value):
+            validated = validate_content_items(collection, value["evidence"])
+            value["content_items"] = validated
+            value["content_item_revisions"] = {
+                item["item_id"]: {"item_revision": item["item_revision"],
+                                  "fingerprint": item_fingerprint(item)}
+                for item in validated["items"]
+            }
+        self.transact(restore)
 
     def progress_task(self, task, *, query=None, gap=None, completed=False):
         def merge(value):
@@ -346,6 +372,9 @@ class MarketRunStore:
             "references": [],
             "artifacts": [],
         }
+        if "content_items" in value:
+            response["content_items"] = {"schema_version": "1.0",
+                "revision": value["content_items"]["revision"] + 1, "items": []}
         try:
             event = self.append(
                 "run.cancelled",

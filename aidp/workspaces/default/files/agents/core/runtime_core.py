@@ -223,7 +223,13 @@ class ProviderPending(RuntimeError):
 
 
 class ProviderStatusUnavailable(ProviderPending):
-    pass
+    reason = "mcp_error_envelope"
+
+
+class ProviderResponseInvalid(ValueError):
+    def __init__(self, message, diagnostic):
+        super().__init__(message)
+        self.diagnostic = diagnostic
 
 
 class ProviderReceiptUnverified(ProviderPending):

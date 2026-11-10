@@ -95,9 +95,12 @@ ACTOR_TOOLS = {
         ActorTool(
             "youtube_search", "youtube", ActorQueryInput, "video_titles_descriptions"
         ),
+        ActorTool("instagram_hashtag", "instagram", ActorQueryInput, "hashtag_posts"),
+        ActorTool("facebook_comments", "facebook", ActorPageInput, "selected_post_comments"),
+        ActorTool("instagram_comments", "instagram", ActorPageInput, "selected_post_comments"),
         ActorTool("facebook_search", "facebook", ActorQueryInput, "keyword_posts"),
         ActorTool(
-            "instagram_search", "instagram", ActorQueryInput, "popular_reel_captions"
+            "instagram_search", "instagram", ActorQueryInput, "keyword_posts"
         ),
         ActorTool(
             "facebook_posts", "facebook", ActorPageInput, "selected_destination_posts"
@@ -128,7 +131,7 @@ def actor_tool_specifications(sources):
     if "financial_document" in admitted:
         admitted.add("web")
     tools = [tool for tool in ACTOR_TOOLS.values()
-             if tool.source in admitted and tool.name != "instagram_search"]
+             if tool.source in admitted]
     if "instagram" in admitted and "web" not in admitted:
         tools.append(ACTOR_TOOLS["web_search_serp"])
     return [

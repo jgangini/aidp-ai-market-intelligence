@@ -6,7 +6,12 @@ from .runtime_core import Conflict, ObjectSnapshot, digest
 
 
 class MarketSessionPending(RuntimeError):
-    pass
+    def __init__(self, request_id):
+        super().__init__(
+            "Retoma con su identificador original o cancela el encargo pendiente "
+            "antes de iniciar otro."
+        )
+        self.request_id = request_id
 
 
 class MarketSession:
@@ -56,13 +61,12 @@ class MarketSession:
                 return {**existing, "context": value["context"]}
             if active:
                 if (
-                    active["question"] != question
+                    active["request_id"] != request_id
+                    or active["question"] != question
                     or active["revision"] != revision
                     or active.get("selections") != selections
                 ):
-                    raise MarketSessionPending(
-                        "Retoma o cancela el encargo pendiente antes de iniciar otro o cambiar su revisión."
-                    )
+                    raise MarketSessionPending(active["request_id"])
                 return {**active, "context": value["context"]}
             if existing:
                 return {**existing, "context": value["context"]}

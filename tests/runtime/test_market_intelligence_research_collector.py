@@ -68,12 +68,137 @@ def test_market_facebook_keyword_search_has_its_own_durable_receipt_and_native_a
     first=market_collect(collector)
     again=market_collect(collector)
     assert len(provider.starts)==1 and first==again
-    assert provider.starts[0]['actor']=='apify/facebook-search-scraper'
-    assert provider.starts[0]['input']['searchType']=='posts'
+    assert provider.starts[0]['actor']=='scraper_one/facebook-posts-search'
+    assert provider.starts[0]['input']['query']=='Fixture brand reclamaciones'
     assert first['evidence'][0]['source']=='facebook' and first['evidence'][0]['discovery_channel']=='facebook'
     operations=effects.snapshot.read()[0]['operations']
     assert {row['state'] for row in operations.values()}=={'completed'}
     assert all(row['receipt']['runId'] for row in operations.values())
+
+
+@pytest.mark.parametrize('pending',[True,False])
+def test_facebook_pending_or_unrecognized_error_does_not_start_alternative_captures(pending):
+    provider,effects,collector=market_collection_fixture()
+    provider.pending=pending
+    async def invalid(*args,**kwargs):
+        raise ValueError('Unknown dataset failure')
+    provider.observations=invalid
+    first=market_collect(collector)
+    assert first==market_collect(collector) and len(provider.starts)==1
+    assert first['status']==('pending' if pending else 'unavailable')
+    assert not first['evidence']
+
+
+def topical_fixture(source='facebook', *, post_count=1):
+    provider,effects,collector=market_collection_fixture()
+    parents=[f'https://facebook.com/fixturebrand/posts/{n}' if source=='facebook'
+             else f'https://instagram.com/p/POST{n}' for n in range(1,post_count+1)]
+    async def observe(receipt,call,**kwargs):
+        if 'comment' in call['actor']:
+            parent=(call['input'].get('directUrls') or [r['url'] for r in call['input']['startUrls']])[0]
+            row={**market_evidence(source),'url':parent+'?comment_id=123' if source=='facebook' else parent+'/c/123',
+                 'text':'La promoción me sirvió.',
+                 'provenance':{'provider_run_id':receipt['runId'],'content_basis':'comment_text',
+                               'requested_url':parent,'channel_name':'Public commenter'}}
+            rows=[row]
+        else:
+            rows=[{**market_evidence(source),'url':parent,'text':'Fixture brand reclamaciones sobre productos.',
+                   'metrics':{'comments':10},
+                   'provenance':{'provider_run_id':receipt['runId'],'content_basis':'post_text'}} for parent in parents]
+        return SimpleNamespace(items=rows,coverage=None,cost=receipt['spent_microusd'])
+    provider.observations=observe
+    return provider,effects,collector,parents
+
+
+@pytest.mark.parametrize('source',['facebook','instagram'])
+def test_topical_posts_and_comments_are_bounded_attributed_and_replayed_without_effects(source):
+    provider,effects,collector,parents=topical_fixture(source,post_count=3)
+    result=market_collect(collector,source=source)
+    assert result==market_collect(collector,source=source)
+    posts=[row for row in result['evidence'] if row['content_basis']=='post_text']
+    comments=[row for row in result['evidence'] if row['content_basis']=='comment_text']
+    assert len(posts)==3 and len(comments)==2
+    assert {row['requested_url'] for row in comments}==set(parents[:2])
+    assert all(row['author_name']=='Public commenter' and 'no atribuirlo' in ' '.join(row['limitations']) for row in comments)
+    assert len(provider.starts)==(4 if source=='instagram' else 3)
+    comment_calls=[call for call in provider.starts if 'comment' in call['actor']]
+    assert all(call['input']['resultsLimit']==5 and not call['input']['includeNestedComments'] for call in comment_calls)
+    assert all(operation['state']=='completed' for operation in effects.snapshot.read()[0]['operations'].values())
+
+
+@pytest.mark.parametrize('uncertain',[False,True])
+def test_comment_pending_retains_posts_and_prevents_a_second_start_until_reconciled(uncertain):
+    provider,effects,collector,_=topical_fixture(post_count=2)
+    start=provider.start
+    async def pending_start(call):
+        receipt=await start(call)
+        if 'comment' in call['actor']:
+            if uncertain:raise TimeoutError('Receipt lost after provider accepted start')
+            provider.pending=True
+        return receipt
+    provider.start=pending_start
+    first=market_collect(collector)
+    assert first['status']=='pending' and len(first['evidence'])==2
+    assert first==market_collect(collector) and len(provider.starts)==2
+    comments=[row for key,row in effects.snapshot.read()[0]['operations'].items() if key.startswith('facebook_comments-')]
+    assert len(comments)==1 and comments[0]['state']==('uncertain' if uncertain else 'running')
+    if not uncertain:
+        provider.pending=False;provider.start=start
+        recovered=market_collect(collector)
+        assert recovered['status']=='complete' and len(recovered['evidence'])==4
+        assert len(provider.starts)==3 and recovered==market_collect(collector)
+
+
+def test_comment_failure_retains_posts_and_is_partial_without_profile_fallback():
+    provider,effects,collector,_=topical_fixture()
+    observe=provider.observations
+    async def malformed(receipt,call,**kwargs):
+        if 'comment' in call['actor']:raise ValueError('Unknown comment format')
+        return await observe(receipt,call,**kwargs)
+    provider.observations=malformed
+    result=market_collect(collector)
+    assert result['status']=='partial' and len(result['evidence'])==1
+    assert result['evidence'][0]['content_basis']=='post_text'
+    assert any('incompatibles' in text for text in result['limitations'])
+    assert result==market_collect(collector) and len(provider.starts)==2
+
+
+def test_comment_targets_require_relevance_date_and_known_positive_count():
+    provider,effects,collector,parents=topical_fixture(post_count=6)
+    observe=provider.observations
+    async def mixed(receipt,call,**kwargs):
+        result=await observe(receipt,call,**kwargs)
+        if 'comment' not in call['actor']:
+            result.items[1]['text']='Vendo una casa en otra ciudad.'
+            result.items[2]['published_at']=None
+            result.items[3]['published_at']='2026-10-01T12:00:00Z'
+            result.items[4]['metrics']['comments']=0
+            result.items[5]['metrics']={}
+        return result
+    provider.observations=mixed
+    result=market_collect(collector)
+    comments=[row for row in result['evidence'] if row['content_basis']=='comment_text']
+    assert len(comments)==1 and comments[0]['requested_url']==parents[0]
+    assert len(provider.starts)==2
+
+
+def test_comments_from_other_parent_and_outside_period_are_not_published():
+    provider,effects,collector,parents=topical_fixture()
+    observe=provider.observations
+    async def mixed(receipt,call,**kwargs):
+        result=await observe(receipt,call,**kwargs)
+        if 'comment' in call['actor']:
+            valid=result.items[0]
+            result.items=[valid,{**valid,'url':parents[0]+'?comment_id=456',
+                                'published_at':'2026-10-01T12:00:00Z'},
+                          {**valid,'url':'https://facebook.com/other/posts/999?comment_id=789',
+                           'provenance':{**valid['provenance'],'requested_url':'https://facebook.com/other/posts/999'}}]
+        return result
+    provider.observations=mixed
+    result=market_collect(collector)
+    assert result['status']=='partial' and len(result['evidence'])==2
+    assert sum(row['content_basis']=='comment_text' for row in result['evidence'])==1
+    assert any('periodo' in text for text in result['limitations'])
 
 
 def test_market_known_youtube_run_with_empty_results_recovers_without_a_new_start():
@@ -109,59 +234,86 @@ def test_market_youtube_channel_metadata_survives_the_provider_to_evidence_proje
     assert result['content_basis']=='title_and_description'
 
 
-def test_market_instagram_recent_posts_use_discovered_destinations_and_empty_receipt_is_not_restarted():
+def test_instagram_keyword_and_hashtag_empty_receipts_are_not_restarted():
     provider,effects,collector=market_collection_fixture()
     async def observe(receipt,call,**kwargs):
-        if call['actor']=='scraperlink/google-search-results-serp-scraper':
-            rows=[{'url':'https://instagram.com/fixturebrand','text':'Fixture brand public profile',
-                   'provenance':{'provider_run_id':receipt['runId'],'content_basis':'search_title_and_snippet'}}]
-        else:
-            assert call['actor']=='apify/instagram-post-scraper'
-            assert call['input']['username']==['https://instagram.com/fixturebrand']
-            assert call['input']['onlyPostsNewerThan']=='2026-10-27T12:00:00Z'
-            rows=[]
-        return SimpleNamespace(items=rows,coverage=None,cost=receipt['spent_microusd'])
+        assert call['actor']=='apify/instagram-hashtag-scraper'
+        return SimpleNamespace(items=[],coverage=None,cost=receipt['spent_microusd'])
     provider.observations=observe
     result=market_collect(collector,source='instagram')
     assert result['status']=='partial' and result['evidence']==[]
     assert market_collect(collector,source='instagram')==result and len(provider.starts)==2
-    saved=effects.snapshot.read()[0]['operations']['fixture-operation-read']
-    assert saved['state']=='completed' and saved['result']['items']==[]
-    assert saved['receipt']['spent_microusd']==500
+    assert [call['input']['keywordSearch'] for call in provider.starts]==[True,False]
+    assert sum(call['input']['resultsLimit'] for call in provider.starts)==20
+    operations=effects.snapshot.read()[0]['operations']
+    assert all(row['state']=='completed' and row['result']['items']==[] for row in operations.values())
+    assert all(row['receipt']['spent_microusd']==500 for row in operations.values())
 
 
-def test_instagram_refinement_does_not_repeat_the_same_profile_or_consume_the_web_budget():
-    from ai_market_intelligence.runtime.provider import _social_result
+def test_identical_instagram_literal_uses_distinct_keyword_and_hashtag_modes():
     provider,effects,collector=market_collection_fixture()
+    async def observe(receipt,call,**kwargs):
+        assert call['input']['hashtags']==['fixturebrand']
+        rows=[] if call['input']['keywordSearch'] else [{**market_evidence('instagram'),
+            'url':'https://instagram.com/p/POST1','text':'Fixturebrand publicó una oferta.',
+            'provenance':{'provider_run_id':receipt['runId'],'content_basis':'post_text'}}]
+        return SimpleNamespace(items=rows,coverage=None,cost=receipt['spent_microusd'])
+    provider.observations=observe
+    parameters=dict(request_id='fixture-request',run_id='fixture-run',operation_key='same-literal',
+        task={'source':'instagram','query':'fixturebrand','urls':[]},
+        brief={'entity':'fixturebrand','start':'2026-10-27T12:00:00+00:00','end':'2026-11-02T12:00:00+00:00'},
+        previous_operation_id=None)
+    result=asyncio.run(collector.collect(**parameters))
+    assert len(result['evidence'])==1 and result['evidence'][0]['receipt_id']=='receipt-2'
+    assert [call['input']['keywordSearch'] for call in provider.starts]==[True,False]
+    assert sum(call['input']['resultsLimit'] for call in provider.starts)==20
+    assert result==asyncio.run(collector.collect(**parameters)) and len(provider.starts)==2
+
+
+def test_refinement_reuses_same_hashtag_and_parent_comments_within_the_request():
+    provider,effects,collector,_=topical_fixture('instagram')
+    parameters=dict(request_id='fixture-request',run_id='fixture-run',operation_key='first-topic',
+        task={'source':'instagram','query':'Fixture brand reclamaciones','urls':[]},
+        brief={'entity':'Fixture brand','start':'2026-10-27T12:00:00+00:00','end':'2026-11-02T12:00:00+00:00'},
+        previous_operation_id=None)
+    first=asyncio.run(collector.collect(**parameters))
+    second=asyncio.run(collector.collect(**{**parameters,'operation_key':'refined-topic',
+        'task':{**parameters['task'],'query':'Fixture brand productos'}}))
+    keyword=[call for call in provider.starts if call['input'].get('keywordSearch') is True]
+    hashtag=[call for call in provider.starts if call['input'].get('keywordSearch') is False]
+    comments=[call for call in provider.starts if 'comment' in call['actor']]
+    assert len(keyword)==2 and len(hashtag)==len(comments)==1
+    assert len(first['evidence'])==len(second['evidence'])==2
+    assert first['evidence'][-1]['receipt_id']==second['evidence'][-1]['receipt_id']
+
+
+def test_explicit_instagram_refinement_does_not_repeat_profiles_or_consume_web_budget():
+    from ai_market_intelligence.runtime.provider import _social_result
+    first_url='https://instagram.com/fixturebrand/reels'
+    other_url='https://instagram.com/otherbrand'
+    provider,effects,collector=market_collection_fixture(explicit_urls=[first_url,other_url])
     market_reserve_prior_reads(effects,count=10)
     reads=[]
     async def observe(receipt,call,**kwargs):
-        if call['actor']=='scraperlink/google-search-results-serp-scraper':
-            assert call['input']['tbs']=='cdr:1,cd_min:10/27/2026,cd_max:11/02/2026'
-            urls=['https://instagram.com/fixturebrand/reels','https://instagram.com/fixturebrand']
-            if reads:urls.append('https://instagram.com/otherbrand')
-            return SimpleNamespace(items=[{'url':url,'text':'Public profile',
-                'provenance':{'provider_run_id':receipt['runId']}} for url in urls],coverage=None,cost=500)
         urls=call['input']['username'];reads.append(urls)
         if len(reads)==1:
             rows=[{'url':urls[0],'username':'fixturebrand','error':'not_found','errorDescription':'Profile does not exist'}]
         else:
-            assert urls==['https://instagram.com/otherbrand']
+            assert urls==[other_url]
             rows=[{'url':'https://instagram.com/p/valid','inputUrl':urls[0],'caption':'A public caption.',
                    'timestamp':'2026-11-01T12:00:00Z'}]
         return _social_result(rows,receipt,call)
     provider.observations=observe
-    first=market_collect(collector,source='instagram')
+    first=market_collect(collector,source='instagram',urls=[first_url])
     assert first['status']=='unavailable' and 'no demuestra' in first['limitations'][0]
     assert 'incompatibles' not in first['limitations'][0]
-    assert market_collect(collector,source='instagram')==first and len(provider.starts)==2
+    assert market_collect(collector,source='instagram',urls=[first_url])==first and len(provider.starts)==1
     second=asyncio.run(collector.collect(request_id='fixture-request',run_id='fixture-run',
-        operation_key='refinement',task={'source':'instagram','query':'Fixture brand','urls':[]},
+        operation_key='refinement',task={'source':'instagram','query':'Fixture brand','urls':[first_url,other_url]},
         brief={'start':'2026-10-27T12:00:00+00:00','end':'2026-11-02T12:00:00+00:00',
                'retrieval_mode':'conversation'},previous_operation_id=None))
     assert second['status']=='complete' and len(second['evidence'])==1
-    assert reads==[['https://instagram.com/fixturebrand/reels'],['https://instagram.com/otherbrand']]
-    assert len(effects.reserved_read_urls())==10
+    assert reads==[[first_url],[other_url]] and len(effects.reserved_read_urls())==10
 
 
 def test_explicit_instagram_profile_aliases_are_read_once_without_broadening_authority():
