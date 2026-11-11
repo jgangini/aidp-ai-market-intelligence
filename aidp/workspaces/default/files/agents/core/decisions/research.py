@@ -348,7 +348,9 @@ content_units agrupa las evidencias admitidas por publicación, página o docume
 los comentarios de su publicación padre. Devuelve items con unit_id copiado de esas unidades,
 text breve en Markdown, evidence_ids de esa misma unidad y limitations materiales. Escribe una
 síntesis propia del contenido pertinente de cada unidad, no el párrafo agregado de la fuente
-repetido en todas. Omite unidades sin aporte al encargo; no fabriques una síntesis para llenar
+repetido en todas. Autor, fecha y URL ya tienen campos de metadatos: no los uses como prefijo
+del resumen ni repitas esa ficha en text. Conserva una fecha o atribución dentro de la prosa
+cuando sea necesaria para entender un hecho o distinguir una opinión. Omite unidades sin aporte al encargo; no fabriques una síntesis para llenar
 tarjetas. No mezcles dos publicaciones ni traslades opiniones de comentarios al autor o la marca.
 Una unidad de comentarios resume sólo los comentarios recuperados y atribuidos a ese padre:
 no mide el sentimiento, la frecuencia ni la opinión global de los clientes. Separa observación,

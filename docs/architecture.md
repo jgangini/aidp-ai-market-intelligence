@@ -92,12 +92,38 @@ completas y después incorpora metadatos, bloques y fichas que caben con todos s
 Los comentarios no se admiten sin su publicación padre. Las coberturas del contexto distinguen
 observaciones, unidades individuales, fichas y bloques omitidos; omitir una ficha opcional no
 impide analizar la evidencia admitida de la fuente.
+Si los comentarios fueron recuperados pero su unidad quedó fuera del contexto de una pasada,
+la ficha publica `comments_analysis.status=unavailable`, con texto e IDs vacíos y conteo analizado
+cero. `not_collected` se reserva para padres sin comentarios observados vinculables. Esta
+comprobación usa el inventario del servidor, sin admitir borradores fuera de revisión ni
+conservar una síntesis anterior descartada; el cambio sigue las revisiones normales de la ficha.
 
 `content_items` es una colección pública opcional en los sobres existentes de evento,
 respuesta y snapshot, fuera de `MarketEvent`. La colección se reemplaza completa por revisión;
 la ausencia del campo no actualiza nada y una lista vacía con revisión superior retira lo
 publicado. Las revisiones y fingerprints privados sobreviven a la retirada de un ítem.
 El streaming de fuente y consolidación conserva su contrato; no hay deltas por ítem.
+
+La ficha de una publicación usa `content_items.items[].text` como resumen revisado y
+`primary_evidence_id` para resolver autor, fecha, URL y medios del padre en `references`.
+Los comentarios no son fichas de publicaciones: `comments_analysis.evidence_ids` selecciona
+sus referencias, cuyo `requested_url` conserva el padre observado. Cada referencia
+`content_basis=comment_text` incluye `text`, el texto recuperado de hasta 12.000 caracteres,
+no una clasificación de sentimiento ni el resumen del post. El cliente debe mostrarlo como
+texto no confiable, sin interpretar HTML. Facebook conserva `author_name` y `author_url`
+del comentarista cuando el actor entrega `profileName` y un `profileUrl` público válido;
+un nombre ausente queda desconocido y nunca se sustituye por el autor del padre.
+
+La descripción por unidad se redacta independientemente de autor, fecha y URL de
+la ficha. Esos metadatos no se repiten como prefijo; una atribución o fecha material
+para comprender el hallazgo sí se conserva. Esta instrucción del prompt no equivale
+a una garantía de estilo del modelo y requiere evaluación sobre sus salidas reales.
+El contrato público de actividades y propósito de eventos se define en
+[operaciones](operations.md#presentación-explícita-en-eventos). La UI presenta el
+contenido recibido y mantiene separados sus propios avisos de conexión y sesión.
+Los medios de la búsqueda Facebook se leen de `attachments` tipados como `photo` o `video`,
+conservando su tipo, URL recuperada y firma. Un video no se convierte en una imagen y el
+enlace no acredita análisis del contenido ni su vigencia.
 
 ## Descubrimiento web y continuación
 

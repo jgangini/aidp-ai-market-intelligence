@@ -100,6 +100,9 @@ def _facebook_video(item, add):
 
 
 def _facebook_media(row, add):
+    for attachment in _array(row.get("attachments")):
+        if isinstance(attachment, dict) and attachment.get("type") in ("photo", "video"):
+            add({"photo": "image", "video": "video"}[attachment["type"]], attachment.get("url"))
     for entry in _array(row.get("media")):
         if not isinstance(entry, dict):
             continue

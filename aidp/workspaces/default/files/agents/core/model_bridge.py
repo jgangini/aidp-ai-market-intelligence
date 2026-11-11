@@ -7,16 +7,71 @@ from asyncio import CancelledError, sleep
 import hashlib
 import json
 import os
+from pathlib import Path
 from random import random
 import time
 from threading import Lock, local
 from types import SimpleNamespace
 from uuid import uuid4
 
-from .config import OPENAI_MODE, llm_auth_mode
+from .config import OPENAI_MODE, llm_auth_mode, validate_market_config
 
 
 LOCAL_MODEL_ATTEMPTS = 3
+
+
+def _model_selection(binding):
+    if not isinstance(binding, dict):
+        raise ValueError("Local parity requires an explicit model binding")
+    mode = llm_auth_mode(binding)
+    credential = "llm_credential_name" if mode == OPENAI_MODE else "credential_name"
+    fields = ("model_id", "region", "compartment_id", "model_endpoint", credential)
+    if any(not isinstance(binding.get(key), str) or not binding[key].strip() for key in fields):
+        raise ValueError("Local parity requires a complete model binding in the candidate")
+    return {"llm_auth_mode": mode, **{key: binding[key] for key in fields},
+            "model_endpoint": binding["model_endpoint"].rstrip("/")}
+
+
+def _check_local_model_settings(settings, selected, *, explicit_mode):
+    if not isinstance(settings, dict):
+        raise ValueError("Local model settings must be an explicit selection")
+    if explicit_mode and llm_auth_mode(settings) != selected["llm_auth_mode"]:
+        raise ValueError("Local/native LLM authentication modes differ")
+    for key, expected in selected.items():
+        if key not in settings:
+            continue
+        actual = settings[key]
+        if key == "model_endpoint" and isinstance(actual, str):
+            actual = actual.rstrip("/")
+        if actual != expected:
+            raise ValueError("Local/native model selection differs: " + key)
+
+
+def _candidate_model_selection(entry, inventory):
+    root = Path(entry).resolve().parent
+    path = root / "core/runtime.json"
+    if ("core/runtime.json" not in inventory or path.is_symlink()
+            or not path.resolve().is_relative_to(root)):
+        raise ValueError("The candidate needs its declared runtime configuration")
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != inventory["core/runtime.json"]:
+        raise ValueError("The candidate runtime configuration changed before local evaluation")
+    config = validate_market_config(json.loads(raw))
+    return _model_selection(config.get("services") or {})
+
+
+def validate_local_model_selection(settings, binding, entry, inventory, *, tracked_settings=None):
+    """Bind local inference to the verified candidate, without reading credential values."""
+    selected = _candidate_model_selection(entry, inventory)
+    if _model_selection(binding) != selected:
+        raise ValueError("The local binding differs from the candidate model selection")
+    _check_local_model_settings(settings, selected, explicit_mode=True)
+    for key in ("model_id", "region", "compartment_id"):
+        if settings.get(key) != selected[key]:
+            raise ValueError("Local/native model selection differs: " + key)
+    if tracked_settings is not None:
+        _check_local_model_settings(tracked_settings, selected, explicit_mode=False)
+    return selected
 
 
 def update_model_observation(path, record, state, **values):

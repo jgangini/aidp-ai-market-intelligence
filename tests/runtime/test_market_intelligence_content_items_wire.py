@@ -25,7 +25,8 @@ def fixture_store(fixture, *, content=True):
     store = MarketRunStore(MarketSnapshot(), "fixture-revision", event_limit=1)
     store.begin("fixture-request", "Pregunta de mercado")
     evidence = {
-        row["evidence_id"]: {**row, "text": "Raw observation is not a public summary.", "receipt_id": "private-receipt"}
+        row["evidence_id"]: {**row, "text": "Comentario original de su autor." if row["content_basis"] == "comment_text"
+                             else "Raw observation is not a public summary.", "receipt_id": "private-receipt"}
         for row in fixture["references"]
     }
     evidence["unrelated"] = {**evidence["post-evidence"], "evidence_id": "unrelated", "url": "https://example.org/unrelated"}
@@ -44,6 +45,9 @@ def test_event_adds_the_full_collection_and_only_its_public_references(content_f
     assert packet["event"]["event_id"] == event["event_id"] and packet["event"]["sequence"] == 1
     assert "content_items" not in packet["event"]
     assert "private-receipt" not in json.dumps(packet) and "Raw observation" not in json.dumps(packet)
+    comment = next(row for row in packet["references"] if row["content_basis"] == "comment_text")
+    assert comment["text"] == "Comentario original de su autor."
+    assert comment["requested_url"] == content_fixture["references"][1]["requested_url"]
 
 
 def test_expired_replay_preserves_items_without_duplicating_nested_response(content_fixture):
@@ -59,6 +63,7 @@ def test_expired_replay_preserves_items_without_duplicating_nested_response(cont
     assert "content_items" not in packet["replay"]["snapshot"]["response"]
     assert store.read()[0]["response"]["content_items"] == content_fixture["collection"]
     assert {row["evidence_id"] for row in packet["references"]} == {"post-evidence", "comment-evidence"}
+    assert next(row for row in packet["references"] if row["content_basis"] == "comment_text")["text"] == "Comentario original de su autor."
 
 
 def test_response_lifts_items_without_state_access_or_mutating_its_input(content_fixture):

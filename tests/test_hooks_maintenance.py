@@ -72,6 +72,7 @@ def test_exact_explicit_operation_session_and_paused_outputs(native,action):
     call=native.maintain.call_args
     assert call.args==(native.clients[0],action,OP)
     assert call.kwargs.get('test_session_id')==SESSION
+    assert call.kwargs.get('change_model', False) is (action == 'update')
     native.install.assert_not_called()
     native.bootstrap.assert_not_called()
     if action=='rollback':
@@ -220,7 +221,7 @@ def test_rollback_preflight_skips_apify_model_but_requires_identity_and_roles(pr
     apify=Mock(side_effect=AssertionError('Rollback must not call Apify'))
     monkeypatch.setattr(hooks,'check_apify',apify)
     c=context('existing')
-    c['inputs']['lifecycle_action']='rollback'
+    c['inputs'].update(lifecycle_action='rollback', llm_auth_mode='openai', openai_model_id='user-selected-model')
     c['inputs']['artifacts_bucket_mode']='existing'
     if revoked:
         preflight_native.auth.side_effect=[None,AidpProvisionConflict('administrator revoked')]
@@ -228,8 +229,22 @@ def test_rollback_preflight_skips_apify_model_but_requires_identity_and_roles(pr
             hooks.preflight(c,{},'config')
     else:
         result=hooks.preflight(c,{},'config')
+        assert result['inputs']['llm_auth_mode'] == 'openai'
+        assert result['inputs']['agent_model_id'] == 'user-selected-model'
         assert any(event['status']=='warning' and 'Rollback' in event['message'] for event in result['events'])
     assert preflight_native.auth.call_count==2
     assert preflight_native.auth.call_args.kwargs=={}
     preflight_native.model.get_model.assert_not_called()
     apify.assert_not_called()
+
+
+@pytest.mark.parametrize('model', ['user-selected-model-a', 'user-selected-model-b'])
+def test_deploy_studio_update_passes_user_selected_openai_model_to_maintenance(native, model):
+    c = deployment('update')
+    c['inputs'].update(llm_auth_mode='openai', openai_model_id=model)
+    c['terraform_outputs'].update(llm_auth_mode='openai', agent_model_id=model)
+    hooks.post_apply(c, secrets(), 'not-a-real-config')
+    selected = native.maintain.call_args.args[0].settings
+    assert selected.llm_auth_mode == 'openai'
+    assert selected.agent_model_id == model
+    assert native.maintain.call_args.kwargs['change_model'] is True

@@ -246,16 +246,19 @@ def _materialized_item(unit, draft, comment_unit, comment_draft):
     return item
 
 
-def materialize_content_items(units, drafts, *, previous=None, replace_sources=None, revision_history=None):
+def materialize_content_items(units, drafts, *, previous=None, replace_sources=None, revision_history=None,
+                              observed_evidence=None):
     """Publish only drafts already accepted by the caller's factual review."""
     accepted = _accepted_drafts(units, drafts)
     comments = {unit["item_id"]: unit for unit in units if unit["is_comments"]}
+    observed_comments = {unit["item_id"]: unit for unit in build_content_units(
+        [] if observed_evidence is None else observed_evidence) if unit["is_comments"]}
     items = []
     for unit in units:
         draft = accepted.get(unit["unit_id"])
         if unit["is_comments"] or draft is None:
             continue
-        comment = comments.get(unit["item_id"])
+        comment = comments.get(unit["item_id"], observed_comments.get(unit["item_id"]))
         comment_draft = accepted.get(comment["unit_id"]) if comment else None
         items.append(_materialized_item(unit, draft, comment, comment_draft))
     sources = {unit["source_key"] for unit in units} if replace_sources is None else set(replace_sources)

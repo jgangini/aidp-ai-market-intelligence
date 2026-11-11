@@ -815,7 +815,7 @@ def test_model_update_commits_frozen_config_and_rollback_restores_it(client,monk
     original=copy.deepcopy(client.saved['runtime_config'])
     client.settings.agent_model_id='replacement-model'
     monkeypatch.setattr(work,'agent_package',lambda config:(encoded(config),assets_for(encoded(config))))
-    run(client)
+    run(client, change_model=True)
     selected=client.saved['runtime_config']
     assert selected['services']['model_id']=='replacement-model'
     assert client.files[AGENT_ROOT+'/market_intelligence.py']==encoded(selected)
@@ -833,7 +833,7 @@ def test_pending_model_update_resumes_saved_target_instead_of_live_settings(clie
     client.settings.agent_model_id='requested-model'
     monkeypatch.setattr(work,'agent_package',lambda config:(encoded(config),assets_for(encoded(config))))
     with pytest.raises(AidpProvisionPending):
-        run(client,max_steps=1)
+        run(client,max_steps=1, change_model=True)
     target=copy.deepcopy(client.saved['maintenance']['target_runtime_config'])
     client.settings.agent_model_id='unrelated-after-restart'
     run(client)
@@ -846,7 +846,7 @@ def test_same_operation_cannot_attest_a_different_model(client):
     writes=len(client.uploads)
     client.settings.agent_model_id='different-model'
     with pytest.raises(AidpProvisionConflict,match='model configuration'):
-        run(client)
+        run(client, change_model=True)
     assert len(client.uploads)==writes
 
 
@@ -888,10 +888,28 @@ def test_same_package_model_change_uses_update_and_can_restore_unbound_paused_re
     original_descriptor=client.files[AGENT_ROOT+'/agent-manifest.json']
     monkeypatch.setattr(work,'load_package',lambda *a,**k:NS(pack_sha256='old-pack'))
     monkeypatch.setattr(work,'agent_package',lambda config:(encoded(config),assets_for(encoded(config))))
-    run(client)
+    run(client, change_model=True)
     assert client.saved['runtime_config']['services']['model_id']=='selected-model'
     assert client.saved['pack_sha256']=='old-pack'
     run(client,'rollback')
     assert 'runtime_config' not in client.saved
     assert client.files[AGENT_ROOT+'/agent-manifest.json']==original_descriptor
     assert client.files[AGENT_ROOT+'/market_intelligence.py']==OLD
+
+
+def test_code_update_keeps_installed_selection_when_operator_settings_are_stale(client):
+    original = copy.deepcopy(client.saved['runtime_config'])
+    client.settings.agent_model_id = 'stale-operator-model'
+    run(client)
+    assert client.saved['runtime_config'] == original
+    writes = len(client.uploads)
+    client.settings.agent_model_id = 'another-stale-model'
+    run(client)
+    assert len(client.uploads) == writes
+
+
+@pytest.mark.parametrize('action', ['redeploy', 'rollback'])
+def test_explicit_model_change_requires_update_without_writes(client, action):
+    with pytest.raises(ValueError, match='requires update'):
+        run(client, action, change_model=True)
+    assert not client.uploads and not client.refreshes

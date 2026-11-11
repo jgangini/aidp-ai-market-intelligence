@@ -12,7 +12,7 @@ from ai_market_intelligence.runtime.factory import (
 )
 from ai_market_intelligence.runtime.research_contracts import MarketBrief, MarketEvidence
 from ai_market_intelligence.runtime.model import DecisionModel
-from ai_market_intelligence.runtime.model_bridge import StructuredBridge
+from ai_market_intelligence.runtime.model_bridge import StructuredBridge, validate_local_model_selection
 from ai_market_intelligence.runtime.package_identity import directory_identity, MANIFEST
 from ai_market_intelligence.runtime.runtime_core import Scope
 from ai_market_intelligence.runtime.runtime_versions import runtime_versions
@@ -92,9 +92,8 @@ def build_graph(runtime):
             module = source_root / name.removeprefix('core/')
             if hashlib.sha256(module.read_bytes()).hexdigest() != expected:
                 raise ValueError('Local modules differ from the candidate')
-    for key in ('model_id', 'region', 'compartment_id'):
-        if config['model'][key] != binding[key]:
-            raise ValueError('Selected model binding changed')
+    validate_local_model_selection(config['model'], binding, entry, inventory,
+                                   tracked_settings=getattr(runtime['model'], 'settings', None))
     run = root / '.aidp-local/intake' / uuid4().hex
 
     class Snapshot(MarketEvaluationSnapshot):

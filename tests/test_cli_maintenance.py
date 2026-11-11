@@ -113,7 +113,7 @@ def test_api_key_file_reaches_owner_without_printing_the_secret(command, monkeyp
     secret = 'fixture_llm_key_' + 'a' * 32
     key_file = tmp_path / 'llm-key.txt'
     key_file.write_text(secret + '\n', encoding='utf-8')
-    assert cli.main(['update', *command.base, '--apply', '--llm-api-key-file', str(key_file)]) == 0
+    assert cli.main(['update', *command.base, '--apply', '--change-model', '--llm-api-key-file', str(key_file)]) == 0
     assert command.maintain.call_args.kwargs['llm_api_key'].get_secret_value() == secret
     assert secret not in capsys.readouterr().out
 
@@ -228,3 +228,80 @@ def test_rollback_cannot_bypass_revoked_administrator(command,capsys):
     command.install.assert_not_called()
     assert json.loads(capsys.readouterr().out)['status']=='blocked'
     assert command.closed==[True]
+
+
+def test_explicit_provider_model_selection_is_forwarded(command):
+    assert cli.main(['update', *command.base, '--apply', '--change-model']) == 0
+    assert command.maintain.call_args.kwargs['change_model'] is True
+
+
+@pytest.mark.parametrize('action', ['redeploy', 'rollback', 'status'])
+def test_change_model_flag_requires_update_before_reading_files(action):
+    with pytest.raises(SystemExit) as error:
+        cli.main([action, '--change-model', '--settings', 'missing'])
+    assert error.value.code == 2
+
+
+def test_code_only_update_rejects_secret_file_without_reading_it(command, monkeypatch, tmp_path):
+    from ai_market_intelligence import settings
+    monkeypatch.setattr(settings.Settings, 'model_validate_json', lambda raw: NS(llm_auth_mode='openai'))
+    assert cli.main(['update', *command.base, '--apply', '--llm-api-key-file', str(tmp_path / 'missing')]) == 1
+    command.maintain.assert_not_called()
+
+
+@pytest.mark.parametrize('restore', [False, True])
+def test_migration_dispatch_preserves_recovery_identity_and_bound(command, monkeypatch, tmp_path, restore):
+    from ai_market_intelligence import migration
+    plugin = tmp_path / 'plugin'
+    (plugin / 'aidp_agent_flow').mkdir(parents=True)
+    (plugin / 'aidp_agent_flow/native_lifecycle.py').touch()
+    prepare = Mock(return_value='prepared')
+    forward = Mock(return_value='frozen-forward')
+    migrate = Mock(return_value={'status': 'completed'})
+    recover = Mock(return_value={'status': 'restored'})
+    for name, value in [('prepare', prepare), ('saved_forward', forward), ('migrate', migrate), ('restore', recover)]:
+        monkeypatch.setattr(migration, name, value)
+    assert cli.main(['migrate', *command.base, '--apply', '--project', str(tmp_path),
+                     '--plugin-scripts', str(plugin), *(['--restore-migration'] if restore else [])]) == 0
+    if restore:
+        forward.assert_called_once_with(tmp_path, command.native, OP, plugin)
+        prepare.assert_called_once_with(tmp_path, command.native, OP, plugin, restoring=True)
+        recover.assert_called_once_with(command.native, 'prepared', 'frozen-forward', OP, max_steps=120)
+        migrate.assert_not_called()
+    else:
+        prepare.assert_called_once_with(tmp_path, command.native, OP, plugin)
+        migrate.assert_called_once_with(command.native, 'prepared', OP, apply=True, max_steps=120)
+        forward.assert_not_called()
+        recover.assert_not_called()
+    command.preflight.assert_not_called()
+    assert command.closed == [True]
+
+
+@pytest.mark.parametrize('confirm', [False, True])
+def test_lock_release_keeps_explicit_confirmation_and_exact_etag(command, monkeypatch, confirm):
+    from ai_market_intelligence import operation
+    release = Mock()
+    monkeypatch.setattr(operation, 'release_lock', release)
+    args = ['release-lock', *command.base, '--apply', '--expected-etag', 'observed-etag']
+    if confirm:
+        assert cli.main([*args, '--confirm-no-running-hook']) == 0
+        release.assert_called_once_with(command.native, expected_etag='observed-etag')
+    else:
+        with pytest.raises(SystemExit) as error:
+            cli.main(args)
+        assert error.value.code == 2
+        release.assert_not_called()
+    command.preflight.assert_not_called()
+    assert command.closed == [True]
+
+
+def test_oversized_llm_secret_is_rejected_before_client_creation(command, monkeypatch, tmp_path, capsys):
+    from ai_market_intelligence import settings
+    monkeypatch.setattr(settings.Settings, 'model_validate_json', lambda raw: NS(llm_auth_mode='openai'))
+    path = tmp_path / 'oversized-key.txt'
+    path.write_text('a' * 4098)
+    assert cli.main(['update', *command.base, '--apply', '--change-model', '--llm-api-key-file', str(path)]) == 1
+    command.verify.assert_not_called()
+    command.maintain.assert_not_called()
+    assert command.closed == []
+    assert 'a' * 32 not in capsys.readouterr().out

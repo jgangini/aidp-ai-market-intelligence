@@ -75,6 +75,14 @@ def _social_operation_key(profile, brief, target, limit):
     return profile + "-" + digest([target, brief["start"], brief["end"], limit])
 
 
+def _capture_outcome(result, evidence, limitations):
+    if evidence:
+        return "available"
+    if any((result["items"], limitations, result.get("coverage"))):
+        return "insufficient"
+    return "empty"
+
+
 def _merge_social_captures(key, captures):
     evidence = {}
     for capture in captures:
@@ -90,7 +98,11 @@ def _merge_social_captures(key, captures):
     else:
         status = "partial" if states != {"complete"} or not evidence else "complete"
     return MarketCollection(status=status, evidence=list(evidence.values())[:50],
-                            limitations=limits[:12], operation_id=key).model_dump(mode="json")
+                            limitations=limits[:12], operation_id=key,
+                            result_outcome=(status if status in {"pending", "unavailable"} else
+                                "available" if evidence else
+                                "empty" if not limits and all(c.get("result_outcome") == "empty" for c in captures)
+                                else "insufficient")).model_dump(mode="json")
 
 
 def _comment_result(result, source, parent):
@@ -1188,6 +1200,7 @@ class MarketCollector:
             evidence=evidence,
             limitations=limits,
             operation_id=key,
+            result_outcome=_capture_outcome(result, evidence, limits),
         ).model_dump(mode="json")
 
     def evidence_row(self, source, discovery, row, receipt, brief):

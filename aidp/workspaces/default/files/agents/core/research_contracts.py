@@ -234,6 +234,22 @@ class MarketCollection(Output):
     evidence: Annotated[list[MarketEvidence], Field(max_length=50)]
     limitations: Annotated[list[Short], Field(max_length=12)]
     operation_id: Short | None
+    result_outcome: Literal["available", "empty", "insufficient", "unavailable", "pending"] | None = None
+
+    @model_validator(mode="after")
+    def consistent_outcome(self):
+        if self.result_outcome is None:
+            return self
+        expected = ("pending" if self.status == "pending" else
+                    "unavailable" if self.status == "unavailable" else
+                    "available" if self.evidence else None)
+        if expected is not None and self.result_outcome != expected:
+            raise ValueError("Collection outcome contradicts its status or evidence")
+        if expected is None and self.result_outcome not in {"empty", "insufficient"}:
+            raise ValueError("A collection without evidence cannot report availability")
+        if self.result_outcome == "empty" and self.limitations:
+            raise ValueError("An incomplete capture cannot establish an empty result")
+        return self
 
 
 class MarketFinding(Finding):
@@ -353,6 +369,40 @@ class MarketArtifact(Output):
     status: Literal["provisional", "final"]
 
 
+class MarketActivity(Output):
+    activity_id: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    phase: Literal["retrieving", "retrieved", "reused", "pending", "failed"]
+    state: Literal["running", "pending", "completed", "failed"]
+    outcome: Literal["available", "empty", "insufficient", "unavailable", "pending", "query_rejected", "failed"] | None
+
+    @model_validator(mode="after")
+    def consistent(self):
+        if self.phase == "retrieving":
+            valid = self.state == "running" and self.outcome is None
+        elif self.phase == "pending":
+            valid = self.state == "pending" and self.outcome == "pending"
+        elif self.phase == "failed":
+            valid = self.state == "failed" and self.outcome == "failed"
+        else:
+            valid = self.state == "completed" and self.outcome not in {None, "pending", "failed"}
+        if not valid:
+            raise ValueError("Activity phase, state and outcome contradict each other")
+        return self
+
+
+class MarketPresentation(Output):
+    schema_version: Literal["1.0"]
+    purpose: Literal["progress", "result", "clarification", "answer", "artifact", "terminal"]
+    activity: MarketActivity | None = None
+
+
+def market_event_purpose(event_type):
+    if event_type.startswith("draft."):
+        return "result"
+    return {"source.coverage": "progress", "clarification.required": "clarification",
+            "run.completed": "answer", "artifact.upsert": "artifact"}.get(event_type, "terminal")
+
+
 class MarketEvent(Output):
     schema_version: Literal["1.0"] = "1.0"
     event_id: Short
@@ -386,3 +436,16 @@ class MarketEvent(Output):
     status: Literal["provisional", "final", "partial", "pending", "failed", "cancelled"]
     coverage: dict
     limitations: Annotated[list[Short], Field(max_length=20)]
+
+    @model_validator(mode="after")
+    def presentation_contract(self):
+        if "presentation" in self.coverage:
+            presentation = MarketPresentation.model_validate(self.coverage["presentation"])
+            if presentation.purpose != market_event_purpose(self.type):
+                raise ValueError("Presentation purpose contradicts the event type")
+            if presentation.activity is not None and (
+                self.type != "source.coverage" or self.source_key is None
+                or self.coverage.get("phase") != presentation.activity.phase
+            ):
+                raise ValueError("Activity requires an attributed source coverage event")
+        return self

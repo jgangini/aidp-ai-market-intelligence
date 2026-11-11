@@ -3,6 +3,9 @@ param([switch]$SaveBaseline)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 Set-Location -LiteralPath $root
+$env:UV_CACHE_DIR = Join-Path $root '.local/uv-cache'
+uv run --locked python scripts/check_repository.py --rules-only
+if ($LASTEXITCODE -ne 0) { throw 'Sentrux policy validation failed; no scan or baseline write was started.' }
 $baseline = Join-Path $root '.sentrux/baseline.json'
 if ($SaveBaseline -and (Test-Path -LiteralPath $baseline)) {
     throw 'Preserve the existing Sentrux baseline; this scan cannot replace it.'
@@ -40,6 +43,12 @@ try {
         scope = 'Git input inventory; Sentrux may exclude unsupported file types. Not a reconstructed historical baseline.'
         baseline_sha256 = if (Test-Path -LiteralPath $baseline) {
             (Get-FileHash -LiteralPath $baseline -Algorithm SHA256).Hash.ToLowerInvariant()
+        } else { $null }
+        rules_sha256 = if (Test-Path -LiteralPath '.sentrux/rules.toml') {
+            (Get-FileHash -LiteralPath '.sentrux/rules.toml' -Algorithm SHA256).Hash.ToLowerInvariant()
+        } else { $null }
+        rules_schema_sha256 = if (Test-Path -LiteralPath '.sentrux/rules.schema.json') {
+            (Get-FileHash -LiteralPath '.sentrux/rules.schema.json' -Algorithm SHA256).Hash.ToLowerInvariant()
         } else { $null }
         sources = $inventory
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $scanDirectory 'inventory.json') -Encoding utf8

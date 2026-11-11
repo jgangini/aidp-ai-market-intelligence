@@ -2,7 +2,7 @@
 
 ## Texto incremental público
 
-El protocolo 2.0 conserva `event`, `response`, `snapshot` y `heartbeat`, y añade `kind=text` para prosa provisional. Los consumidores que validan una lista cerrada de tipos deben incorporar esta extensión antes de usar el candidato; compartir versión no vuelve compatibles a lectores antiguos que rechazan tipos desconocidos. El envelope se serializa comenzando por `{"protocol"` y termina con newline.
+El protocolo 2.0 utiliza sobres `event`, `response`, `snapshot` y `heartbeat`, y `kind=text` para prosa provisional. Los consumidores que validan una lista cerrada de tipos deben incorporar esta extensión antes de usar el candidato; compartir versión no vuelve compatibles a lectores antiguos que rechazan tipos desconocidos. El envelope se serializa comenzando por `{"protocol"` y termina con newline.
 
 ```json
 {"protocol":"ai-market-intelligence","version":"2.0","kind":"text","request_id":"request-1","turn_id":"request-1","stream_id":"0123456789abcdef0123456789abcdef","block_id":"source-web","block_revision":1,"source_key":"web","source_keys":["web"],"phase":"delta","delta_index":1,"text":"La muestra ","status":"provisional"}
@@ -25,6 +25,58 @@ Deduplicar por `stream_id` e índice, rechazando un payload diferente para la mi
 Cada solicitud admite hasta 1.024 paquetes transitorios, incluidos controles; cada delta hasta 2.048 caracteres Unicode y cada generación hasta 20.000. Se reserva espacio para cierre y retirada. Al agotarse el cupo se retira el provisional afectado y se completa la generación sin emitir más fragmentos, manteniendo las publicaciones canónicas. Permanecen los límites de 32 MiB por flujo, 8 MiB por frame SSE, 4.096 frames y 2 MiB por paquete público.
 
 Renderizar el texto provisional como contenido no confiable con etiqueta de revisión pendiente; nunca ejecutar HTML o código ni interpretarlo como instrucciones de herramientas. El adaptador excluye JSON de control, otros campos y razonamiento; el contrato de prosa rechaza HTML y fences de código. Ante desconexión, recuperar con la misma sesión/request y revisar el ledger antes de repetir efectos. Una animación sobre un bloque completo no cuenta como streaming del modelo.
+
+## Presentación explícita en eventos
+
+Los eventos nuevos declaran `coverage.presentation` con `schema_version="1.0"` y
+`purpose`: `progress` para `source.coverage`, `result` para `draft.*`,
+`clarification` para `clarification.required`, `answer` para `run.completed`,
+`artifact` para `artifact.upsert` y `terminal` para fallo o cancelación. La presencia
+de esa versión es la señal de capacidad; no se deduce de frases, fuentes ni IDs de
+bloques. No añade claves al sobre ni a `kind=text`, ni cambia el protocolo 2.0.
+Los eventos históricos sin esta capacidad conservan su interpretación anterior.
+Un consumidor que cierre las claves internas de `coverage` debe actualizar su
+validador antes de recibirla; compartir versión no demuestra compatibilidad.
+
+En recopilación, `presentation.activity` contiene exactamente `activity_id`,
+`phase`, `state` y `outcome`. Su identidad SHA-256 depende de ejecución, tarea y
+operación; se conserva al continuar o reutilizar esa captura y no contiene la
+pregunta ni datos del proveedor. Se mantienen `coverage.source`, `phase`,
+`operation_key`, `group_key`, `collection_status` y `evidence_count` cuando aplican.
+Los mensajes son deterministas y se muestran tal como se reciben.
+
+| Fase | Estado | Resultado |
+|---|---|---|
+| `retrieving` | `running` | `null` |
+| `pending` | `pending` | `pending` |
+| `retrieved` o `reused` | `completed` | `available`, `empty`, `insufficient`, `unavailable` o `query_rejected` |
+| `failed` | `failed` | `failed` |
+
+`available` acredita evidencia recuperada, todavía sin aceptación factual.
+`empty` sólo se emite cuando una captura normalizada confirma cero resultados sin
+limitaciones ni señales de recuperación incompleta; no acredita ausencia en la
+plataforma. `insufficient` cubre evidencia descartada o una captura cuyo vacío no
+se puede establecer. `unavailable` declara recuperación no disponible;
+`query_rejected` conserva que no se ejecutó otra consulta. `failed` cierra una
+recuperación que lanzó una excepción, sin publicar su mensaje privado ni repetirla.
+`completed` termina la actividad de recopilación, no la investigación.
+
+El snapshot contiene `activity`, la última actividad por fuente, y
+`activities`, un mapa por `activity_id` que conserva las últimas observaciones de
+actividades distintas de la misma fuente. Sus valores son eventos originales;
+no se reescriben al terminar la investigación. El terminal del turno cierra la UI
+de actividades pendientes sin convertirlas en exitosas. `partial` sigue siendo
+parcial: el propósito `answer` no acredita calidad completa. `run.completed.text`
+continúa siendo texto canónico anticipado y `response` aporta el cierre completo.
+Los deltas de fuente y de síntesis siguen siendo provisionales, con revisión y
+`discard`; `end` no significa aceptación. `text` conserva su conjunto exacto de
+campos y el adaptador nativo de texto permanece sin cambios.
+
+La fixture compartida `tests/fixtures/presentation-v1.ndjson` incluye dos actividades
+de Facebook, deltas `start/delta/end/discard`, corrección de bloque, respuesta parcial
+y snapshot. Los validadores de productor rechazan propósito contradictorio,
+actividad mal formada e inventarios de otro turno. La aceptación de Desk y la
+prueba nativa del candidato se realizan aparte; estas fixtures no las sustituyen.
 
 ## Colección opcional de contenido
 
@@ -102,6 +154,12 @@ una pregunta igual con un identificador nuevo puede iniciar una investigación i
 
 Deploy Studio administra Terraform y llama a los hooks del paquete seleccionado. El formulario instala o reanuda; la CLI administra una instalación existente. El operador firma las solicitudes OCI. `admin_user_ocid` identifica al propietario autorizado y no sustituye la identidad firmante.
 
+Deploy Studio normaliza `Services LLM` y `Select Model` antes de Terraform. OCI IAM usa `agent_model_id`; OpenAI transmite `openai_model_id` como `agent_model_id`, con `llm_auth_mode=openai`. Los outputs y el hook comprueban que esa selección no cambió. La clave se guarda en Credential Store y el binding del agente contiene únicamente su referencia. Un modelo del catálogo requiere una prueba funcional de salida estructurada y streaming antes de aceptarse.
+
+La CLI conserva el proveedor y modelo instalados durante un `update` de código, aunque los settings del operador estén desactualizados. Para cambiar esa selección se usa `update --change-model --apply` con settings actualizados. El formulario `update` de Deploy Studio aplica explícitamente sus campos. `redeploy` exige la misma selección instalada; `rollback` restaura la configuración respaldada. Una operación pendiente reanuda su objetivo congelado sin adoptar settings modificados después.
+
+El harness local compara proveedor, modelo, endpoint, región, compartimento y referencia de credencial del binding con el `core/runtime.json` del candidato y su inventario verificado. También contrasta TOML y configuración del ejecutor antes de crear el adaptador. Rechaza diferencias o bindings incompletos; no cambia automáticamente de OpenAI a OCI IAM. OpenAI local requiere `MARKET_LLM_API_KEY` mediante un proveedor protegido; TEST nativo usa Credential Store. La igualdad de referencias no certifica que dos claves secretas tengan el mismo valor.
+
 Los settings privados incluyen destino AIDP/workspace, región, bucket/namespace, dominio, administrador y modelo. No se publican configuraciones reales, `.oci`, claves, tokens, state ni recibos. El token Apify se entrega por archivo protegido o Credential Store, nunca como argumento literal.
 
 ```powershell
@@ -121,7 +179,7 @@ La instalación recorre verificación, credenciales, compute, archivos, agente, 
 
 | Acción | Comportamiento |
 | --- | --- |
-| `update` | Aplica el paquete o configuración seleccionados con respaldo y verificación. |
+| `update` | Actualiza código conservando la selección instalada; `--change-model` aplica explícitamente el proveedor/modelo de settings. |
 | `redeploy` | Redespliega exactamente el paquete y la configuración instalados; otro candidato requiere `update`. |
 | `rollback` | Restaura el snapshot respaldado y verifica TEST. |
 | `activate-test` | Activa investigación mediante un binding completo sobre el mantenimiento existente. |

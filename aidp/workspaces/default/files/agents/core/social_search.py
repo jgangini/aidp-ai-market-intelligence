@@ -320,6 +320,29 @@ def _instagram_comment_url(uri, identity, parent):
     return parent + "/c/" + identity
 
 
+def _facebook_comment_profile(value):
+    uri = urlsplit(public_url(value))
+    if uri.path == "/profile.php":
+        if uri.hostname not in {"facebook.com", "www.facebook.com"} or not re.fullmatch(r"id=[0-9]{1,40}", uri.query):
+            raise ValueError("Facebook profile requires its public numeric identity")
+        return urlunsplit(("https", "facebook.com", uri.path, uri.query, ""))
+    return social_url(value, "facebook")
+
+
+def _facebook_comment_author(row):
+    author = {}
+    name = row.get("profileName")
+    if isinstance(name, str) and name.strip():
+        author["channel_name"] = name[:500]
+    profile = row.get("profileUrl")
+    if isinstance(profile, str) and len(profile) <= 500:
+        try:
+            author["author_url"] = _facebook_comment_profile(profile)
+        except ValueError:
+            pass
+    return author
+
+
 def _comment_observation(row, receipt, call, platform, url, parent):
     if row.get("threadingDepth", 0) != 0 or row.get("replies"):
         raise ValueError("Nested comments were not admitted")
@@ -329,11 +352,13 @@ def _comment_observation(row, receipt, call, platform, url, parent):
         raise ValueError("Comment requires retrieved text")
     if not text.strip():
         return None
+    author = _facebook_comment_author(row) if platform == "facebook" else {}
     return {"url": url, "text": text[:12000], "published_at": published,
         "observed_at": datetime.now(timezone.utc).isoformat(), "metrics": {},
         "provenance": {"source": call["actor"], "actor_build": call["callOptions"]["build"],
             "provider_run_id": receipt["runId"], "request_arguments_hash": digest(call),
             "requested_url": parent, "content_basis": "comment_text", "scope": "selected_post_comments",
+            **author,
             "source_relation": "requested_destination", "comments_retrieved": True,
             "video_content_analyzed": False, "transcript_retrieved": False,
             "text_truncated": len(text) > 12000, "original_character_count": len(text)}}

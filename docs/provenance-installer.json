@@ -60,5 +60,13 @@
     "is_platform_admin",
     "platform_admin_principals",
     "platform_admin_user_ocids"
-  ]
+  ],
+  "source_repository": "https://github.com/jgangini/oci-ai-data-platform-workbench-starter-kits",
+  "source_revision_url": "https://github.com/jgangini/oci-ai-data-platform-workbench-starter-kits/tree/3c82617fd298933995e954955841007253cc0985",
+  "source_license": {
+    "spdx_id": "MIT",
+    "copyright": "Copyright (c) 2026 jgangini",
+    "url": "https://github.com/jgangini/oci-ai-data-platform-workbench-starter-kits/blob/3c82617fd298933995e954955841007253cc0985/LICENSE",
+    "sha256": "3233428fb91e11f8f2db4591e4eef3a12c15a185cc5f17d0eac16e3c8f6f90d9"
+  }
 }

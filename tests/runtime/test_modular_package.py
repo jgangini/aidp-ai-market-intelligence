@@ -121,7 +121,7 @@ def test_prompt_inventory_preserves_unchanged_text_and_reviewed_research_revisio
         market_select_sources='58896d15b6add9bef378ef50959ebe0f0221cec0779de82051f2245e86f2db9d',
         market_understand='ab4fab90b6068f404ec006d99fffb8f6dfa0fcc3c2f477a485f2fc85e44b0db0',
         market_plan='c15c4c2d5ef0bcad50d6701b35fdf3c4f7be3efeb7510424f203288fec14cb27',
-        market_analyze='d037086ef55b877129008ea3ce8d2c67f494ebfed625fbbdc6eb31e9c59a0f0f',
+        market_analyze='229723191739b96653336c160881e046b97caae274eafecf6c817b45ef8b2514',
         market_draft='f70af5311ad7e7147f3783570155a26a747de79bd23c53a7b9db6b782e2a93cb',
         market_consolidate='18d3521425217a33d0a67bed6df4624a3f39bc9944911a840a16003a42cbbb4b',
         market_verify_items='4a6aff9708a2de34ff4ccae551c5c36ef1f6da49891b8544e5560c4fa9fc416c',

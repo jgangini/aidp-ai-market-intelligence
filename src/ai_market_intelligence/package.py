@@ -7,12 +7,14 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePath, PurePosixPath
 from typing import Any
 
 STANDARD_MODULES = frozenset({'ai_market_intelligence'})
 PACK_VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+")
 MEDALLION_LAYERS = frozenset({'landing', 'bronze', 'silver', 'gold'})
+PRIVATE_SOURCE_PARTS = frozenset({'.oci', '.aws', '.local', '.aidp-local', '.codex', '__pycache__'})
+PRIVATE_SOURCE_SUFFIXES = frozenset({'.pem', '.key', '.p12', '.tfstate', '.tfvars', '.pyc', '.pyo'})
 
 def package_root(package_id: str) -> Path:
     if package_id != 'ai_market_intelligence':
@@ -26,58 +28,76 @@ def package_metadata_path(package_id: str) -> Path:
     return package_root(package_id) / 'package/lab.json'
 
 
+def private_source_path(path: PurePath) -> bool:
+    name = path.name.casefold()
+    return (any(part.casefold() in PRIVATE_SOURCE_PARTS for part in path.parts)
+            or name.startswith('.env') or path.suffix.casefold() in PRIVATE_SOURCE_SUFFIXES
+            or '.tfstate' in name)
+
+
 def source_file(root: Path, name: str) -> Path:
     if not isinstance(name, str) or not name or "\\" in name:
         raise ValueError("Invalid AIDP source path")
     relative = PurePosixPath(name)
     if relative.is_absolute() or relative.as_posix() != name or any(part in {".", ".."} for part in relative.parts):
         raise ValueError("AIDP source path must stay inside its module")
-    if any(part in {".oci", ".aws", ".local", ".aidp-local", ".codex", "__pycache__"} for part in relative.parts) or relative.name.startswith(".env") or relative.suffix.lower() in {".pem", ".key", ".p12", ".tfstate", ".pyc", ".pyo"}:
+    if private_source_path(relative):
         raise ValueError("Private configuration cannot be an AIDP publication source")
     path = (root / name).resolve()
     if not path.is_relative_to(root.resolve()) or not path.is_file():
         raise ValueError(f"Missing or external AIDP source: {name}")
+    if private_source_path(path.relative_to(root.resolve())):
+        raise ValueError("Private configuration cannot be an AIDP publication source")
     return path
 
 
-def load_aidp_manifest(root: Path, module_id: str) -> dict:
-    manifest = json.loads(source_file(root, "aidp/manifest.json").read_text(encoding="utf-8"))
+def _publication_root(manifest: Any, module_id: str) -> str:
     publication_root = "/Workspace/.artifact/" + module_id
     if (not isinstance(manifest, dict) or manifest.get("schema_version") != 1
             or manifest.get("module_id") != module_id or module_id not in STANDARD_MODULES
             or manifest.get("workspace_id") != "default" or manifest.get("publication_root") != publication_root):
         raise ValueError("Invalid AIDP module identity or publication root")
-    assets = manifest.get("assets")
-    if not isinstance(assets, list) or not assets:
-        raise ValueError("An AIDP module must declare its publication assets")
-    targets = set()
-    for asset in assets:
-        if not isinstance(asset, dict):
-            raise ValueError("Invalid AIDP publication asset")
-        target = asset.get("workspace_path")
-        if (not isinstance(target, str) or not target.startswith(publication_root + "/")
-                or "\\" in target or PurePosixPath(target).as_posix() != target
-                or ".." in PurePosixPath(target).parts or target in targets):
-            raise ValueError("AIDP publication targets must be unique and inside their module root")
-        targets.add(target)
-        if asset.get("kind") not in {"python", "notebook", "text", "json", "data"} or type(asset.get("generated")) is not bool:
-            raise ValueError("Invalid AIDP asset kind or generation contract")
-        assembly = asset.get("assembly_sources")
-        if not isinstance(assembly, list) or any(not isinstance(name, str) for name in assembly) or len(assembly) != len(set(assembly)):
-            raise ValueError("Invalid AIDP assembly source closure")
-        if asset["generated"]:
-            if asset.get("source") is not None or not assembly:
-                raise ValueError("Generated AIDP assets need an explicit source closure")
-        else:
-            source = asset.get("source")
-            source_file(root, source)
-            files_root = "aidp/workspaces/default/files/"
-            if not source.startswith(files_root) or target != publication_root + "/" + source.removeprefix(files_root):
-                raise ValueError("Editable AIDP assets must mirror their workspace files path")
-            if assembly:
-                raise ValueError("Editable AIDP assets cannot have another canonical source")
-        for name in assembly:
-            source_file(root, name)
+    return publication_root
+
+
+def _publication_target(asset: Any, publication_root: str, targets: set[str]) -> str:
+    if not isinstance(asset, dict):
+        raise ValueError("Invalid AIDP publication asset")
+    target = asset.get("workspace_path")
+    if (not isinstance(target, str) or not target.startswith(publication_root + "/")
+            or "\\" in target or PurePosixPath(target).as_posix() != target
+            or ".." in PurePosixPath(target).parts or target in targets):
+        raise ValueError("AIDP publication targets must be unique and inside their module root")
+    targets.add(target)
+    return target
+
+
+def _editable_source(root: Path, asset: dict, publication_root: str, target: str) -> None:
+    source = asset.get("source")
+    source_file(root, source)
+    files_root = "aidp/workspaces/default/files/"
+    if not source.startswith(files_root) or target != publication_root + "/" + source.removeprefix(files_root):
+        raise ValueError("Editable AIDP assets must mirror their workspace files path")
+    if asset["assembly_sources"]:
+        raise ValueError("Editable AIDP assets cannot have another canonical source")
+
+
+def _publication_sources(root: Path, asset: dict, publication_root: str, target: str) -> None:
+    if asset.get("kind") not in {"python", "notebook", "text", "json", "data"} or type(asset.get("generated")) is not bool:
+        raise ValueError("Invalid AIDP asset kind or generation contract")
+    assembly = asset.get("assembly_sources")
+    if not isinstance(assembly, list) or any(not isinstance(name, str) for name in assembly) or len(assembly) != len(set(assembly)):
+        raise ValueError("Invalid AIDP assembly source closure")
+    if asset["generated"]:
+        if asset.get("source") is not None or not assembly:
+            raise ValueError("Generated AIDP assets need an explicit source closure")
+    else:
+        _editable_source(root, asset, publication_root, target)
+    for name in assembly:
+        source_file(root, name)
+
+
+def _resource_definitions(manifest: dict) -> list[str]:
     model = manifest.get("model")
     if not isinstance(model, dict) or not isinstance(model.get("tables"), list):
         raise ValueError("Invalid AIDP data model contract")
@@ -89,7 +109,20 @@ def load_aidp_manifest(root: Path, module_id: str) -> dict:
         definitions.extend(values)
     if any(not isinstance(name, str) for name in definitions) or len(definitions) != len(set(definitions)):
         raise ValueError("Duplicate AIDP resource definitions")
-    for name in definitions:
+    return definitions
+
+
+def load_aidp_manifest(root: Path, module_id: str) -> dict:
+    manifest = json.loads(source_file(root, "aidp/manifest.json").read_text(encoding="utf-8"))
+    publication_root = _publication_root(manifest, module_id)
+    assets = manifest.get("assets")
+    if not isinstance(assets, list) or not assets:
+        raise ValueError("An AIDP module must declare its publication assets")
+    targets = set()
+    for asset in assets:
+        target = _publication_target(asset, publication_root, targets)
+        _publication_sources(root, asset, publication_root, target)
+    for name in _resource_definitions(manifest):
         if not isinstance(json.loads(source_file(root, name).read_text(encoding="utf-8")), dict):
             raise ValueError("AIDP resource definitions must be JSON objects")
     return manifest
@@ -103,7 +136,7 @@ def manifest_sources(manifest: dict) -> set[str]:
     for key in ("workflows", "compute", "agents"):
         sources.update(manifest[key])
     for asset in manifest["assets"]:
-        if asset["source"]:
+        if asset.get("source"):
             sources.add(asset["source"])
         sources.update(asset["assembly_sources"])
     return sources
@@ -189,36 +222,43 @@ def _pack_contract(
         raise PackageError(f"Pack hash mismatch: {lab_id}")
     return status, kind, pack_version, digest
 
+def _module_asset_path(root: Path, raw: Any, folder: str | None) -> tuple[str, Path]:
+    if not isinstance(raw, dict):
+        raise PackageError("Invalid global module asset")
+    name = str(raw.get("file") or "")
+    relative = PurePosixPath(name)
+    prefix, pattern = folder + "/" if folder else "", r"[A-Za-z0-9_./-]+"
+    if (not name.startswith(prefix) or re.fullmatch(pattern, name) is None or ".." in relative.parts
+            or relative.as_posix() != name):
+        raise PackageError("Invalid global module asset path")
+    path = (root / name).resolve()
+    if not path.is_relative_to(root.resolve()):
+        raise PackageError("Global module asset escapes its package")
+    return name, path
+
+
+def _module_asset(root: Path, raw: Any, folder: str | None) -> PackageAsset:
+    name, path = _module_asset_path(root, raw, folder)
+    try:
+        if folder is None:
+            path = source_file(root, name)
+        content = path.read_bytes()
+    except (OSError, ValueError) as exc:
+        raise PackageError(f"Missing global module asset: {name}") from exc
+    digest = str(raw.get("sha256") or "")
+    if not re.fullmatch(r"[0-9a-f]{64}", digest) or _sha256(content) != digest:
+        raise PackageError(f"SHA-256 mismatch for {name}")
+    return PackageAsset(name, path, digest)
+
+
 def _module_assets(root: Path, entries: Any, folder: str | None) -> tuple[PackageAsset, ...]:
     """Verify the exact files published by a global module, including nested paths."""
     if not isinstance(entries, list):
         raise PackageError("Global module assets must be a list")
-    assets = []
-    for raw in entries:
-        if not isinstance(raw, dict):
-            raise PackageError("Invalid global module asset")
-        name = str(raw.get("file") or "")
-        relative = PurePosixPath(name)
-        prefix, pattern = folder + "/" if folder else "", r"[A-Za-z0-9_./-]+"
-        if (not name.startswith(prefix) or re.fullmatch(pattern, name) is None or ".." in relative.parts
-                or relative.as_posix() != name):
-            raise PackageError("Invalid global module asset path")
-        path = (root / name).resolve()
-        if not path.is_relative_to(root.resolve()):
-            raise PackageError("Global module asset escapes its package")
-        try:
-            if folder is None:
-                path = source_file(root, name)
-            content = path.read_bytes()
-        except (OSError, ValueError) as exc:
-            raise PackageError(f"Missing global module asset: {name}") from exc
-        digest = str(raw.get("sha256") or "")
-        if not re.fullmatch(r"[0-9a-f]{64}", digest) or _sha256(content) != digest:
-            raise PackageError(f"SHA-256 mismatch for {name}")
-        assets.append(PackageAsset(name, path, digest))
+    assets = tuple(_module_asset(root, raw, folder) for raw in entries)
     if len({asset.name for asset in assets}) != len(assets):
         raise PackageError("Duplicate global module asset")
-    return tuple(assets)
+    return assets
 
 
 def _pack_expected_results(
@@ -277,3 +317,17 @@ def load_package(lab_id: str = 'ai_market_intelligence', *, require_available: b
         formats=_pack_formats(metadata,status,kind,lab_id),
         expected_results=_pack_expected_results(metadata,status,kind,lab_id), agent=agent,
         runtime_files=runtime, source_manifests=manifests)
+
+
+def distribution_assets() -> dict[str, bytes]:
+    """Read only the verified package closure, excluding undeclared build inputs."""
+    pack = load_package('ai_market_intelligence', require_available=False)
+    assets = {asset.name: asset.read_bytes() for asset in (*pack.runtime_files, *pack.source_manifests)}
+    try:
+        raw = package_metadata_path(pack.lab_id).read_bytes()
+        metadata = json.loads(raw)
+    except (OSError, ValueError) as exc:
+        raise PackageError('Invalid package metadata during distribution') from exc
+    if not isinstance(metadata, dict) or _pack_contract(metadata, pack.lab_id, False)[3] != pack.pack_sha256:
+        raise PackageError('Package metadata changed during distribution')
+    return {'package/lab.json': raw, **assets}

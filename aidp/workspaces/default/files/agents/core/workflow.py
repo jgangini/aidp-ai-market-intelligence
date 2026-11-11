@@ -966,13 +966,7 @@ class MarketWorkflow:
         if prior and prior["status"] != "pending":
             collection = prior
         else:
-            self.emit(
-                "source.coverage",
-                role=task["role"],
-                text="Consultando la fuente seleccionada; los hallazgos se mostrarán después de contrastarlos.",
-                coverage={"source": task["source"], "group_key": self.source_group(task["source"]),
-                          "phase": "retrieving", "operation_key": operation_key},
-            )
+            self.collection_progress(value, task, operation_key, "retrieving")
             try:
                 collected = await self.collector.collect(
                     request_id=value["request_id"],
@@ -987,44 +981,58 @@ class MarketWorkflow:
                         else {}
                     ),
                 )
+                collection = MarketCollection.model_validate(collected).model_dump(mode="json")
+                self.save_collection(value, task, operation_key, collection)
             except ProviderQueryRejected:
                 collection = MarketCollection(status="unavailable", evidence=[],
                     limitations=["La consulta propuesta no es compatible con esta fuente; no se ejecutó ni se sustituyó por otra. Se conservan los hallazgos previamente verificados."],
                     operation_id=operation_key).model_dump(mode="json")
                 self.store.merge_collection(operation_key, collection, query_rejected=True)
+                self.collection_progress(value, task, operation_key, "retrieved", collection,
+                                         outcome="query_rejected")
                 return collection
-            collection = MarketCollection.model_validate(collected).model_dump(
-                mode="json"
-            )
-            self.save_collection(value, task, operation_key, collection)
+            except MarketEffectPending:
+                self.collection_progress(value, task, operation_key, "pending", outcome="pending")
+                raise
+            except MarketCancelled:
+                raise
+            except Exception:
+                self.collection_progress(value, task, operation_key, "failed", outcome="failed")
+                raise
         if collection["status"] != "pending":
-            self.emit(
-                "source.coverage",
-                role=task["role"],
-                text=(
-                    "Información recuperada de la fuente; pendiente de análisis y verificación."
-                    if collection["evidence"]
-                    else "La fuente no devolvió evidencia utilizable en esta consulta."
-                ),
-                coverage={
-                    "source": task["source"],
-                    "phase": "reused" if prior and prior["status"] != "pending" else "retrieved",
-                    "operation_key": operation_key,
-                    "collection_status": collection["status"],
-                    "evidence_count": len(collection["evidence"]),
-                },
-                limitations=collection["limitations"][:20],
-            )
+            phase = "reused" if prior and prior["status"] != "pending" else "retrieved"
+            self.collection_progress(value, task, operation_key, phase, collection)
         if collection["status"] == "pending":
-            self.emit(
-                "source.coverage",
-                role=task["role"],
-                status="pending",
-                text="La fuente conserva una operación pendiente; se retomará esa misma captura.",
-                coverage={"source": task["source"], "state": "pending", "phase": "pending"},
-                limitations=collection["limitations"],
-            )
+            self.collection_progress(value, task, operation_key, "pending", collection)
         return collection
+
+    def collection_progress(self, value, task, operation_key, phase, collection=None, *, outcome=None):
+        if collection is not None and outcome is None:
+            outcome = (collection["status"] if collection["status"] in {"pending", "unavailable"}
+                       else "available" if collection["evidence"]
+                       else collection.get("result_outcome") or "insufficient")
+        messages = {
+            None: "Consultando la fuente seleccionada…",
+            "available": "Información recuperada; pendiente de análisis y verificación.",
+            "empty": "La captura no devolvió resultados; no demuestra ausencia en toda la fuente.",
+            "insufficient": "La captura no aporta evidencia utilizable; se conservan sus limitaciones.",
+            "unavailable": "No se pudo recuperar la fuente en esta consulta.",
+            "pending": "La captura sigue pendiente; se conserva su identidad para continuarla.",
+            "query_rejected": "La fuente rechazó la consulta; no se ejecutó una búsqueda alternativa.",
+            "failed": "La recuperación falló; no se ha repetido la operación.",
+        }
+        activity = {"activity_id": digest([value["run_id"], task["task_id"], operation_key]),
+                    "phase": phase, "state": "running" if phase == "retrieving" else
+                    "pending" if phase == "pending" else
+                    "failed" if phase == "failed" else "completed", "outcome": outcome}
+        coverage = {"source": task["source"], "group_key": self.source_group(task["source"]),
+                    "phase": phase, "operation_key": operation_key,
+                    "presentation": {"schema_version": "1.0", "purpose": "progress", "activity": activity}}
+        if collection is not None:
+            coverage.update(collection_status=collection["status"], evidence_count=len(collection["evidence"]))
+        self.emit("source.coverage", role=task["role"], text=messages[outcome], coverage=coverage,
+                  status="pending" if phase == "pending" else "failed" if phase == "failed" else "provisional",
+                  limitations=(collection or {}).get("limitations", [])[:20])
 
     def save_collection(self, value, task, operation_key, collection):
         if any(row["source"] != task["source"] for row in collection["evidence"]):

@@ -1,0 +1,24 @@
+# Supported by Sentrux 0.5.7. Policy and scope: docs/development.md.
+[constraints]
+max_cycles = 0
+no_god_files = true
+
+[[boundaries]]
+from = "aidp/workspaces/default/files/agents/**"
+to = "src/ai_market_intelligence/cli.py"
+reason = "The portable agent must not import the administrative CLI."
+
+[[boundaries]]
+from = "aidp/workspaces/default/files/agents/**"
+to = "src/ai_market_intelligence/hooks.py"
+reason = "The portable agent must not import Deploy Studio hooks."
+
+[[boundaries]]
+from = "aidp/workspaces/default/files/agents/**"
+to = "scripts/**"
+reason = "The deployed agent must not depend on local development or validation scripts."
+
+[[boundaries]]
+from = "src/**"
+to = "scripts/**"
+reason = "The installable administrative package must not import development scripts."

@@ -10,6 +10,8 @@ const event = (sequence, values = {}) => ({ event_id: `event-${sequence}`, seque
 const reference = { evidence_id: 'source', url: 'https://example.org/public', source: 'facebook' };
 const artifact = { artifact_id: 'plot', kind: 'line', evidence_ids: ['source'], rows: [] };
 const contentFixture = JSON.parse(readFileSync(new URL('./fixtures/content-items-v1.json', import.meta.url), 'utf8'));
+const presentationFixture = readFileSync(new URL('./fixtures/presentation-v1.ndjson', import.meta.url), 'utf8')
+  .trim().split('\n').map(line => JSON.parse(line));
 const contentPacket = (collection, sequence = 1, references = contentFixture.references) => envelope({ kind: 'event',
   event: event(sequence, { type: 'source.coverage', block_id: null, evidence_ids: [] }),
   references, artifacts: [], content_items: collection });
@@ -17,6 +19,18 @@ const text = (phase = 'start', index = 0, fragment = '', values = {}) => envelop
   request_id: 'request', turn_id: 'request', stream_id: 'a'.repeat(32), block_id: 'source-web',
   block_revision: 1, source_key: 'web', source_keys: ['web'], phase, delta_index: index,
   text: fragment, status: 'provisional', ...values });
+
+test('existing v2 consumer accepts presentation metadata without rewriting prose or partial status', () => {
+  let view = createMarketView('fixture-request');
+  for (const packet of presentationFixture) view = reduceMarketPacket(view, packet);
+  assert.equal(view.final.status, 'partial');
+  assert.equal(view.final.markdown, 'La muestra es parcial.');
+  assert.equal(view.textBlocks.size, 0);
+  assert.equal(view.activity.size, 1); // Existing view is still keyed by source.
+  const snapshot = presentationFixture.find(packet => packet.kind === 'snapshot');
+  assert.equal(Object.keys(snapshot.replay.snapshot.activities).length, 2);
+  assert.equal(view.activity.get('facebook').coverage.presentation.schema_version, '1.0');
+});
 
 test('true text fragments are visible before completion without changing the durable cursor', async () => {
   let controller;

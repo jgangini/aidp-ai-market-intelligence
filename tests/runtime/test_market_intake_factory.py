@@ -34,21 +34,24 @@ def test_intake_refuses_effects_and_preinitialized_model():
 
 @pytest.mark.parametrize('descriptor_kind', ['prepared', 'installed'])
 def test_intake_uses_checkpoint_and_preserves_private_semantic_output(tmp_path, monkeypatch, descriptor_kind):
-    source_hash = stage(tmp_path / 'candidate')
+    from tests.runtime.test_market_intelligence_research_runtime import market_active_config
+    native_config = market_active_config()
+    native_config['services'].update(model_id='fixture', compartment_id='fixture',
+                                      guardrails_config={'policies': []}, enabled_sources=['web'])
+    source_hash = stage(tmp_path / 'candidate', native_config)
     module = intake_module()
     descriptor = {'schema_version': 2, 'candidate_revision': 'test-candidate', 'source_sha256': source_hash}
     if descriptor_kind == 'installed':
         descriptor = {'schema_version': 1, 'layout_version': 2, 'module_id': 'ai_market_intelligence', 'pack_sha256': 'a' * 64}
         monkeypatch.setattr(module, 'load_package', lambda *a, **k: SimpleNamespace(pack_sha256='a' * 64))
     (tmp_path/'candidate/agent-manifest.json').write_text(json.dumps(descriptor))
-    binding = {'model_id':'fixture','region':'fixture-region','compartment_id':'fixture',
-        'search_context':{'country_code':'CO','language_code':'es'},'enabled_sources':['web']}
+    binding = native_config['services']
     raw = json.dumps(binding).encode()
     (tmp_path/'binding.json').write_bytes(raw)
     (tmp_path/'aidp-agent.toml').write_text(
         '[agent]\nentry="candidate/market_intelligence.py"\n'
         '[intake_test]\nbinding_file="binding.json"\nbinding_sha256="'+hashlib.sha256(raw).hexdigest()+'"\n'
-        '[model]\nmodel_id="fixture"\nregion="fixture-region"\ncompartment_id="fixture"\n')
+        '[model]\nmodel_id="fixture"\nregion="us-chicago-1"\ncompartment_id="fixture"\n')
     plugin = ModuleType('aidp_agent_flow.project')
     plugin.contained = lambda root, relative: root / relative
     def private_json(path, value, **kwargs):

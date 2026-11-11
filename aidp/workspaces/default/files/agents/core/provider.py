@@ -80,7 +80,7 @@ def _provider_dataset_arguments(receipt, call):
             "id,type,productType,shortCode,url,inputUrl,ownerUsername,caption,timestamp,likesCount,commentsCount,displayUrl,videoUrl,images,childPosts,error,errorDescription,requestErrorMessages,isError"
         )
     elif call["actor"] in COMMENT_ACTORS.values():
-        arguments["fields"] = "commentUrl,inputUrl,facebookUrl,postUrl,text,date,timestamp,commentId,id,threadingDepth,replies,error,errorDescription,requestErrorMessages,isError"
+        arguments["fields"] = "commentUrl,inputUrl,facebookUrl,postUrl,text,date,timestamp,commentId,id,profileName,profileUrl,threadingDepth,replies,error,errorDescription,requestErrorMessages,isError"
     return arguments
 
 

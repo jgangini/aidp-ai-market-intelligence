@@ -6,28 +6,12 @@ Comprobar varios fragmentos públicos antes del cierre real del proveedor, no s�
 
 El control de grafo exige fragmentos anteriores a la revisión, reemplazo por el bloque durable, cierre sin intervalo vacío, retirada explícita ante rechazo, presupuesto acotado y ausencia de tokens en snapshots. El consumidor comprueba intercalación, deduplicación, orden, revisiones, replay y prevalencia del resultado final. El contrato limita exposición a prosa pública provisional: no presenta como verificados los hechos antes de la revisión ni permite que ese texto dirija herramientas. La aceptación conjunta requiere observación nativa y varios fragmentos visibles en el cliente antes del final, con el mismo candidato, sesión y solicitud.
 
-La aceptación nativa y visual está verificada en TEST para el candidato
-`5152f7a63c97d7a86d78e62babcd3ecda81f33f53a5febbc0e58a5de99c39642`
-(10 de noviembre de 2026). La consulta acotada a YouTube sobre D1 terminó en
-88,324 segundos, con siete llamadas al modelo, una captura Apify y tres referencias.
-El recibo confirma respuesta `complete`, sesión liberada y cero efectos pendientes,
-sin replay ni recuperación manual. Se conservaron las identidades del agente, compute
-y sesión TEST; PROD no se modificó.
-
-En 392 observaciones del Browser se comprobó texto por fuente dentro del proceso abierto
-y crecimiento real de la síntesis de 20 a 1.297 caracteres con la consulta todavía activa
-y el proceso plegado. No hubo estados vacíos desde el inicio de la síntesis ni alertas;
-el scroll se mantuvo en el final del área visible. El transporte recibió 93 frames y 80
-paquetes de texto público. Los recibos privados están en
-`.local/aidp-development/public-text-terminal-handoff-retry/` y la verificación de revisión
-servida en `.local/aidp-development/public-text-terminal-handoff/verification.json`.
-Esos archivos permanecen en almacenamiento privado ignorado por Git.
-
-Este cierre acredita el streaming y su reemplazo canónico en Agent Desk contra TEST
-para ese caso. No demuestra cobertura de todas las fuentes, calibración general del
-evaluador, rendimiento representativo ni aceptación de esta revisión en Agent Hub o PROD.
-La aceptación funcional se comprueba por separado del gate de arquitectura. La extracción
-HCL de Graphify continúa sin su parser opcional.
+La evidencia de aceptación vincula el candidato servido, la identidad de la sesión y
+la solicitud con los paquetes recibidos y el estado renderizado por el cliente.
+Registrar el primer progreso, el primer delta, la respuesta canónica, los efectos
+y las limitaciones. Separar el tiempo de preparación o despliegue del tiempo de
+investigación. Una grabación local o una animación no reemplazan la observación de
+una transmisión nativa; un caso de una fuente no acredita todas las demás.
 
 ## Síntesis individuales y comentarios
 
@@ -47,27 +31,20 @@ los originales siguen disponibles para la verificación y consolidación. Una fi
 no demuestra que no haya publicaciones. La comparación de costo y latencia requiere
 mediciones controladas, separando generación, revisión, primer resultado y cierre completo.
 
-La colección tiene aceptación nativa en TEST para el candidato
-`00a64d5e6749e40d4d6f2cb192105a24bb7a21d2d04f44cb5d4933dc4ca12e5f`
-(10 de noviembre de 2026). Un único caso real sobre D1 en Colombia, acotado a YouTube
-durante siete días, entregó dos fichas revisadas y dos referencias. La solicitud terminó
-`completed` con respuesta `partial` por su alcance: ocho llamadas al modelo, una operación
-Apify, cero efectos pendientes de esa solicitud y sesión liberada. El navegador recibió
-101 paquetes de texto; se observaron 51 estados crecientes del proceso y 41 de la respuesta
-final. El carrusel cambió entre resúmenes propios y la recarga conservó colección y final,
-sin avisos ni errores. El scroll tuvo cuatro desajustes transitorios de 122 a 415 ms,
-hasta 73 px, y terminó con separación cero del final.
+La aceptación de fichas comprueba que la selección de una publicación conserva su
+resumen, autor y fecha observados, medios, evidencias y estado de comentarios. El
+resumen no repite los metadatos como prefijo. Las pruebas de navegación y recarga
+se hacen antes de cerrar el contexto del navegador; datos guardados o una revisión
+del contrato no demuestran por sí solos que todas las fichas hayan sido visibles.
 
-Los recibos están en `.local/aidp-development/content-items-native-20261110/` y permanecen
-fuera de Git. Este caso valida títulos y descripciones de YouTube, no análisis audiovisual
-ni comentarios sociales nativos; estos últimos conservan su validación local. La facturación
-real sigue sin verificar. Los intentos históricos inciertos se preservaron sin reintentarlos;
-PROD no cambió. El postflight conserva 1.992 pruebas Python, 25 de protocolo y 17 de Terraform
-aprobadas. El gate Sentrux aprueba con la referencia histórica intacta, sin reglas adicionales,
-ciclos ni god files. La validación del paquete instalado y la política de errores del probe
-pertenecen a comprobaciones independientes del inicio y polling de mantenimiento; esta
-separación mantiene las guardas de identidad y rollback y reduce su complejidad. Un gate
-sin regresión no significa que toda la deuda estructural histórica haya desaparecido.
+Comentarios sin evidencia admitida permanecen sin analizar. Una captura fallida o
+incompatible conserva su diagnóstico y sus recibos; no permite afirmar que la
+publicación carezca de comentarios. Una miniatura se entrega sólo si existe en los
+datos recuperados; el avatar del autor no sustituye a la imagen de una publicación.
+
+Los recibos, versiones observadas, métricas y resultados de cada ensayo se conservan
+en almacenamiento privado ignorado por Git. La aceptación funcional y el gate de
+arquitectura son comprobaciones distintas; ambos declaran su alcance y sus fallos.
 
 ## Qué se evalúa
 

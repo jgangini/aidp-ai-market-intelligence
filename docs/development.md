@@ -28,6 +28,12 @@ OpenAI usa exclusivamente `https://api.openai.com/v1/chat/completions`, con una
 API key del servicio OpenAI; una clave de OCI Generative AI no sirve para esa conexión.
 El runtime nativo y el harness local comparten `OpenAIModel`.
 
+Antes de inferencia, ambas factories locales verifican que TOML, binding congelado y
+`core/runtime.json` del candidato declaren la misma selección de proveedor/modelo,
+endpoint y referencia de credencial, junto con región y compartimento. Una diferencia
+se rechaza antes de crear el adaptador; una medición congelada no adopta otro modelo
+silenciosamente. Véase [configuración e identidad](operations.md#configuración-e-identidad).
+
 En AIDP, la clave se resuelve desde Credential Store: `AiMarketIntelligenceOpenAI`,
 clave `api_key`. En pruebas locales se inyecta sólo en el entorno del proceso como
 `MARKET_LLM_API_KEY`, desde el gestor de secretos del operador. Nunca incluirla en
@@ -71,7 +77,25 @@ El postflight ejecuta pruebas Python, package-check, protocolo Node, formato/val
 
 Terraform se valida con el contrato 1.5.7 de Resource Manager; los mocks necesitan la versión moderna indicada en CI. Los proveedores deben estar inicializados. La CI también construye la distribución Python.
 
-Sentrux usa una baseline conservada e inventarios de entrada con hashes. Si no hay reglas, informar sólo el gate de regresión; no inventar reglas ni redefinir la baseline para obtener un pase. Los scripts incluyen fuentes nuevas mediante un índice Git temporal y comprueban que el índice compartido no cambie.
+Sentrux usa una baseline conservada e inventarios de entrada con hashes. Los scripts incluyen fuentes nuevas mediante un índice Git temporal y comprueban que el índice compartido no cambie. `arch-scan.ps1` ejecuta tanto el gate de regresión como `sentrux check .`; un fallo en cualquiera bloquea el postflight. No reemplazar la baseline para obtener un pase.
+
+Antes de escanear, el flujo exige la política y valida `.sentrux/rules.toml` contra `.sentrux/rules.schema.json` mediante `scripts/check_repository.py --rules-only`. Rechaza claves desconocidas, tipos incompatibles con TOML/Rust, números no finitos y políticas sin reglas activas. Los contadores requieren enteros TOML: `0.0` no equivale a `0` para este contrato. Las puntuaciones normalizadas usan el intervalo 0–1. Así se evita que Sentrux ignore silenciosamente una regla mal escrita. El mismo validador se usa en el comprobador de CI, y el inventario conserva los hashes de la política y su esquema junto al de la baseline.
+
+Las seis reglas de `.sentrux/rules.toml`, verificadas con Sentrux 0.5.7, exigen:
+
+- Cero ciclos de dependencias y ningún archivo con fan-out superior a 15, según la métrica del motor.
+- El agente portable no puede importar la CLI administrativa, los hooks de Deploy Studio ni scripts de desarrollo.
+- El paquete administrativo `src/` no puede importar `scripts/`.
+
+La frontera completa entre el agente y `src/` se comprueba también en `scripts/check_repository.py` mediante el AST de Python, incluidos imports dentro de funciones. Ese control utiliza nombres de módulos completos: rechaza `ai_market_intelligence`, `src` y `scripts` desde el agente, y permite el módulo externo `oracle_memory_clients.client`. No ejecuta los imports ni necesita que sus dependencias estén instaladas. El mismo control ya forma parte de CI.
+
+Sentrux opera sobre imports resueltos y excluye pruebas y almacenamiento privado mediante `.sentruxignore`. Su resolución puede confundir el módulo externo `oracle_memory_clients.client` con un archivo administrativo local de igual nombre. Las fronteras explícitas y la comprobación AST separan ambos namespaces sin excluir código del escaneo. Ninguno de los dos mecanismos acredita dependencias cargadas mediante imports dinámicos.
+
+No se configuran capas: el [motor de Sentrux 0.5.7](https://github.com/sentrux/sentrux/blob/f36da08a53e7f06c5b6aec33eb05816b371000ea/sentrux-core/src/metrics/rules/mod.rs) aplica su comparación de órdenes en sentido contrario al descrito en la [guía oficial](https://sentrux.dev/docs/rules-engine/). Se usan fronteras explícitas probadas con el binario instalado. La complejidad y el acoplamiento existentes siguen bajo el gate de regresión; estas reglas no certifican que esa deuda haya desaparecido ni añaden umbrales elegidos sólo para aprobar.
+
+`tests/test_sentrux_rules.py` ejecuta casos permitidos y violaciones deliberadas de las fronteras, ciclos y fan-out en repositorios temporales aislados. Se omite si no está instalada la CLI; el postflight local exige Sentrux. La CI actual ejecuta el comprobador de imports Python, pero no instala ni ejecuta el motor Sentrux. Las pruebas funcionales y de calidad del agente siguen siendo comprobaciones independientes.
+
+El diagnóstico de complejidad puede ejecutarse sobre una copia aislada de las fuentes con hashes, usando el umbral de complejidad alta del motor. Esa configuración diagnóstica no sustituye las reglas del proyecto ni constituye una nueva baseline. Un resultado señala funciones que conviene revisar; no demuestra por sí solo un defecto funcional ni justifica alterar contratos de recuperación para reducir una métrica.
 
 ## Navegación del código
 

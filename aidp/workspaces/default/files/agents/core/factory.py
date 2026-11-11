@@ -18,7 +18,7 @@ from .collector import MarketCollector
 from .native import market_question_urls
 from .social import social_url
 from .runtime_core import public_url
-from .model_bridge import StructuredBridge
+from .model_bridge import StructuredBridge, validate_local_model_selection
 
 
 class MarketEvaluationSnapshot:
@@ -219,9 +219,8 @@ def build_graph(runtime):
         runtime_versions(tuple(profile["packages"])), profile
     )["exact_match"]:
         raise ValueError("Local evaluation does not match the observed AIDP runtime")
-    for key in ("model_id", "region", "compartment_id"):
-        if config["model"][key] != binding[key]:
-            raise ValueError("Local/native model bindings differ")
+    validate_local_model_selection(config["model"], binding, entry, files,
+                                   tracked_settings=getattr(runtime["model"], "settings", None))
     model = DecisionModel(
         StructuredBridge(
             runtime["model"],

@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 
 from .runtime_core import Conflict, digest, encoded, utc_now
-from .research_contracts import MarketEvent
+from .research_contracts import MarketEvent, market_event_purpose
 from .content_items import materialize_content_items, item_fingerprint, validate_content_items
 
 
@@ -180,7 +180,8 @@ class MarketRunStore:
         def replace(value):
             collection = materialize_content_items(units, drafts,
                 previous=value.get("content_items"), replace_sources=[source],
-                revision_history=value.get("content_item_revisions"))
+                revision_history=value.get("content_item_revisions"),
+                observed_evidence=[row for row in value["evidence"].values() if row["source"] == source])
             history = value.setdefault("content_item_revisions", {})
             for item in collection["items"]:
                 history[item["item_id"]] = {"item_revision": item["item_revision"],
@@ -284,6 +285,10 @@ class MarketRunStore:
             "run.cancelled",
         }:
             raise ValueError("Only a terminal event can commit a final response")
+        coverage = copy.deepcopy(coverage or {})
+        coverage.setdefault("presentation", {
+            "schema_version": "1.0", "purpose": market_event_purpose(event_type),
+        })
 
         def record(value):
             if value["cancelled"] and event_type != "run.cancelled":
@@ -310,7 +315,7 @@ class MarketRunStore:
                 return copy.deepcopy(value["publications"][publication_key])
             market_commit_terminal(value, event_type, final_response)
             attribution = market_attribution(value["evidence"], evidence_ids)
-            if event_type == "source.coverage" and not evidence_ids and (coverage or {}).get("source"):
+            if event_type == "source.coverage" and not evidence_ids and coverage.get("source"):
                 source = coverage["source"]
                 attribution = {
                     "source_key": source,
@@ -342,7 +347,7 @@ class MarketRunStore:
                     "evidence_ids": list(evidence_ids),
                     "artifact_ids": list(artifact_ids),
                     "status": status,
-                    "coverage": coverage or {},
+                    "coverage": coverage,
                     "limitations": list(limitations),
                 }
             ).model_dump(mode="json")
@@ -428,6 +433,11 @@ class MarketRunStore:
                     for event in value["publications"].values()
                     if event["type"] == "source.coverage" and event["source_key"]
                     and event["coverage"].get("phase")
+                },
+                "activities": {
+                    event["coverage"]["presentation"]["activity"]["activity_id"]: copy.deepcopy(event)
+                    for event in value["publications"].values()
+                    if (event["coverage"].get("presentation") or {}).get("activity")
                 },
                 "artifacts": copy.deepcopy(value["artifacts"]),
                 "response": copy.deepcopy(value["response"]),

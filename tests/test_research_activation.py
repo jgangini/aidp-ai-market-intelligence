@@ -82,7 +82,7 @@ def test_update_switches_auth_under_lock_and_rollback_preserves_credential(clien
     monkeypatch.setattr(work, 'ensure_llm_credential', ensure)
     monkeypatch.setattr(work, 'llm_credential_reference', lambda *a: {'credential_key': 'llm'})
     monkeypatch.setattr(activation, 'llm_credential_reference', lambda *a: {'credential_key': 'llm'})
-    result = run(client, operation=OTHER, llm_api_key=SecretStr('a' * 32))
+    result = run(client, operation=OTHER, change_model=True, llm_api_key=SecretStr('a' * 32))
     assert result['status'] == 'completed'
     assert client.saved['runtime_config']['schema_version'] == 2
     assert client.saved['runtime_config']['services']['llm_auth_mode'] == 'openai'
@@ -240,3 +240,23 @@ def test_oversize_binding_fails_before_maintenance(command, tmp_path, capsys):
     command.maintain.assert_not_called()
     assert json.loads(capsys.readouterr().out)['status'] == 'blocked'
     assert command.closed == [True]
+
+
+@pytest.mark.parametrize('installed_mode', ['openai', 'oci_iam'])
+def test_code_update_preserves_deploy_studio_provider_and_model(client, active_target, monkeypatch, installed_mode):
+    client.settings.llm_auth_mode = installed_mode
+    if installed_mode == 'openai':
+        active_target['schema_version'] = 2
+        active_target['services'].update(llm_auth_mode='openai', llm_credential_name='AiMarketIntelligenceOpenAI', guardrails_config={'policies': []},
+            model_endpoint='https://api.openai.com/v1')
+        client.saved['resources']['llm_credential_key'] = 'llm'
+        monkeypatch.setattr(work, 'ensure_llm_credential', lambda *a: None)
+        monkeypatch.setattr(work, 'llm_credential_reference', lambda *a: {'credential_key': 'llm'})
+        monkeypatch.setattr(activation, 'llm_credential_reference', lambda *a: {'credential_key': 'llm'})
+    run(client, runtime_config=active_target)
+    original = copy.deepcopy(client.saved['runtime_config'])
+    client.settings.llm_auth_mode = 'oci_iam' if installed_mode == 'openai' else 'openai'
+    client.settings.agent_model_id = 'stale-settings-model'
+    monkeypatch.setattr(work, 'ensure_llm_credential', lambda *a: pytest.fail('Code update must not select or rotate a credential'))
+    run(client, operation=OTHER)
+    assert client.saved['runtime_config'] == original

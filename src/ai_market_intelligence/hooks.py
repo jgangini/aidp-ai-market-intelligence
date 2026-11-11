@@ -155,7 +155,9 @@ def preflight(context, secrets, config_file):
         events.append({'name': 'Recovery', 'status': 'warning',
             'message': 'Rollback restores recorded paused artifacts only; no Apify or model call is required or started.'})
         return {'inputs': {'home_region': home[0], 'identity_domain_url': domain_url,
-                           'objectstorage_namespace': namespace, 'artifacts_bucket_name': fields['artifacts_bucket_name']}, 'events': events}
+                           'objectstorage_namespace': namespace, 'artifacts_bucket_name': fields['artifacts_bucket_name'],
+                           'agent_model_id': fields['agent_model_id'],
+                           'llm_auth_mode': fields.get('llm_auth_mode', 'oci_iam')}, 'events': events}
     llm_key = _llm_secret(context, secrets)
     if fields.get('llm_auth_mode', 'oci_iam') == OPENAI_MODE:
         if action == 'install' and llm_key is None:
@@ -277,6 +279,7 @@ def post_apply(context, secrets, config_file):
                     load_package('ai_market_intelligence', require_available=False).pack_sha256)
             key = _llm_secret(context, secrets) if action != 'rollback' else None
             status = maintain(client, action, operation, test_session_id=session,
+                              **({'change_model': True} if action == 'update' else {}),
                               **({'llm_api_key': key} if key is not None else {}))
         recovered_failure = status['status'] == 'rolled_back' and action != 'rollback'
         return {'outputs': {'installation_status': status['status'], 'installation_phase': status['phase'],

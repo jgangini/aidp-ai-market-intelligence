@@ -21,6 +21,30 @@ def test_shared_fixture_preserves_spanish_and_identical_collection_across_envelo
         assert fixture[name]['content_items'] == fixture['collection']
 
 
+def test_source_replacement_uses_captured_comments_when_analysis_context_omits_their_unit():
+    store, _, _, _ = market_fixture(('facebook',))
+    store.begin('fixture-request', 'Comentarios sobre la publicación')
+    parent = {**market_evidence('facebook'), 'evidence_id': 'parent',
+              'url': 'https://facebook.com/example/posts/1', 'content_basis': 'post_text', 'text': 'Anuncio.'}
+    comment = {**parent, 'evidence_id': 'comment', 'content_basis': 'comment_text',
+               'url': parent['url'] + '?comment_id=2', 'requested_url': parent['url'], 'text': 'Crítica individual.'}
+    store.save(evidence={'parent': parent, 'comment': comment})
+    units = build_content_units([parent, comment])
+    drafts = [{'unit_id': unit['unit_id'], 'text': 'Opinión atribuida.' if unit['is_comments'] else 'Anuncio.',
+               'evidence_ids': unit['evidence_ids'], 'limitations': []} for unit in units]
+    first = store.replace_content_items('facebook', units, drafts)
+    original = copy.deepcopy(first)
+    parent_unit = next(unit for unit in units if not unit['is_comments'])
+    parent_draft = next(draft for draft in drafts if draft['unit_id'] == parent_unit['unit_id'])
+    second = store.replace_content_items('facebook', [parent_unit], [parent_draft])
+    assert first == original and first['items'][0]['comments_analysis']['analyzed_count'] == 1
+    assert second['revision'] == second['items'][0]['item_revision'] == 2
+    assert second['items'][0]['comments_analysis']['status'] == 'unavailable'
+    assert second['items'][0]['comments_analysis']['text'] is None
+    replay = json.loads(market_replay_packet(store, 'fixture-request', 0))
+    assert replay['content_items'] == second
+
+
 def item_flow(*, reject_comments=False, invalid_parent=False):
     store, model, collector, graph = market_fixture(('facebook',))
     parent = market_evidence('facebook')

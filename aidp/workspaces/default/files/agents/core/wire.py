@@ -346,7 +346,9 @@ def market_reference_manifest(evidence, identities):
         "document_sha256",
     )
     return [
-        {key: evidence[identity][key] for key in fields if key in evidence[identity]}
+        {**{key: evidence[identity][key] for key in fields if key in evidence[identity]},
+         **({"text": evidence[identity]["text"]}
+            if evidence[identity].get("content_basis") == "comment_text" else {})}
         for identity in identities
     ]
 
@@ -469,6 +471,38 @@ def validate_wire_packet(packet):
         validate_text_packet(packet)
     else:
         market_validate_content_manifest(packet)
+        market_validate_presentation(packet)
+
+
+def _market_activity_events(activities):
+    if not isinstance(activities, dict):
+        raise ValueError("Invalid activity inventory")
+    events = []
+    for identity, event in activities.items():
+        parsed = MarketEvent.model_validate(event)
+        activity = (parsed.coverage.get("presentation") or {}).get("activity")
+        if not activity or identity != activity.get("activity_id"):
+            raise ValueError("Activity inventory identity changed")
+        events.append(event)
+    return events
+
+
+def market_validate_presentation(packet):
+    events = []
+    if packet["kind"] == "event":
+        events.append(packet["event"])
+    snapshot = (packet.get("replay") or {}).get("snapshot") or {}
+    for container in ("blocks", "activity"):
+        saved = snapshot.get(container, {})
+        if not isinstance(saved, dict):
+            raise ValueError("Invalid snapshot event inventory")
+        events.extend(saved.values())
+    events.extend(_market_activity_events(snapshot.get("activities", {})))
+    for event in [*events, *(packet.get("replay") or {}).get("events", [])]:
+        if "presentation" in event.get("coverage", {}):
+            MarketEvent.model_validate(event)
+            if packet.get("request_id") is not None and event["turn_id"] != packet["request_id"]:
+                raise ValueError("Presentation belongs to another request")
 
 
 class MarketWireDecoder:

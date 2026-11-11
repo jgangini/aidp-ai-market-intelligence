@@ -119,6 +119,33 @@ def test_no_admitted_comments_remain_not_collected():
                         "evidence_ids": [], "text": None, "analyzed_count": 0, "limitations": []}
 
 
+def test_observed_comments_omitted_from_next_context_are_unavailable_and_revisioned():
+    rows, units = grouped()
+    first = materialize_content_items(units, [draft(unit) for unit in units])
+    original = copy.deepcopy(first)
+    parent = next(unit for unit in units if not unit["is_comments"])
+    second = materialize_content_items([parent], [draft(parent)], previous=first, observed_evidence=rows)
+    item = second["items"][0]
+    assert first == original and first["items"][0]["comments_analysis"]["status"] == "partial"
+    assert second["revision"] == item["item_revision"] == 2
+    assert item["comments_analysis"] == {"status": "unavailable", "parent_item_id": item["item_id"],
+        "evidence_ids": [], "text": None, "analyzed_count": 0,
+        "limitations": ["Se recuperaron comentarios, pero no se publicó una síntesis individual verificada."]}
+    comments = next(unit for unit in units if unit["is_comments"])
+    with pytest.raises(ValueError, match="server unit"):
+        materialize_content_items([parent], [draft(parent), draft(comments)], observed_evidence=rows)
+
+
+@pytest.mark.parametrize("change", [{"requested_url": "https://facebook.com/other/posts/123"},
+                                    {"source": "instagram"}])
+def test_unrelated_observed_comments_do_not_change_parent_coverage(change):
+    rows, units = grouped()
+    parent = next(unit for unit in units if not unit["is_comments"])
+    value = materialize_content_items([parent], [draft(parent)],
+                                     observed_evidence=[rows[0], {**rows[1], **change}])
+    assert value["items"][0]["comments_analysis"]["status"] == "not_collected"
+
+
 def test_recaptured_comment_under_two_receipts_counts_one_observed_comment():
     rows, _ = grouped()
     rows.append({**rows[1], "evidence_id": "recaptured", "receipt_id": "another-receipt"})

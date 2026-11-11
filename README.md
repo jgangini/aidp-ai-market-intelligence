@@ -21,6 +21,8 @@ El proyecto incluye el agente, su paquete de distribución, una CLI administrati
 
 Deploy Studio permite elegir **OCI IAM** para Generative AI u **OpenAI** con su API key y modelo. Las credenciales de OpenAI y Apify se guardan por separado en Credential Store de AIDP.
 
+Un cliente compatible, como Agent Desk, consume los eventos públicos del agente. Distingue progreso, borradores sujetos a revisión y respuesta canónica; presenta los mensajes originales y conserva las referencias y las limitaciones. Los eventos identifican cada actividad y su resultado, de modo que una captura vacía, evidencia insuficiente y una fuente no disponible no se interpretan como lo mismo.
+
 ## Componentes
 
 | Ruta | Responsabilidad |
@@ -57,3 +59,7 @@ uv run aidp-market package-check
 - [Distribución del paquete](docs/distribution.md)
 
 Credenciales, estados Terraform, configuraciones del tenant y recibos reales permanecen fuera de Git. La investigación puede consumir servicios de modelo y actores Apify de pago. El agente puede omitir información o equivocarse; las decisiones de negocio requieren revisar sus fuentes y cobertura.
+
+## Licencia
+
+El código de este repositorio se distribuye bajo la [licencia MIT](LICENSE). Las dependencias y servicios externos conservan sus propias licencias y condiciones de uso. La [procedencia del instalador](docs/provenance-installer.json) identifica sus fuentes.

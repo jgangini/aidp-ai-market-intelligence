@@ -433,10 +433,11 @@ def _verify_installed_candidate(client, state, before):
         raise AidpProvisionConflict('The installed source or dependencies changed after TEST acceptance.')
 
 
-def _begin(client, native, state, action, operation, session, runtime_config=None, *, preserve_production=False):
+def _begin(client, native, state, action, operation, session, runtime_config=None, *, preserve_production=False,
+           change_model=False):
     if state.get('layout_version') != 2:
         raise AidpProvisionConflict('Legacy layout migration requires verified native rebinding; the installation and backups were preserved.')
-    config = target_configuration(client, state, runtime_config)
+    config = target_configuration(client, state, runtime_config, change_model=change_model or action == 'redeploy')
     pack, target = _target(client, {**state, 'runtime_config': config})
     before, additions = _read_update_inventory(client, state, target)
     _verify_installed_candidate(client, state, before)
@@ -683,11 +684,11 @@ def _select_rollback(client, state, factory):
         _save(client, state)
 
 
-def _resume_operation(client, state, action, test_session_id, runtime_config, factory):
+def _resume_operation(client, state, action, test_session_id, runtime_config, factory, change_model=False):
     journal = state['maintenance']
     if action != 'rollback' and journal['status'] in {'completed', 'rolled_back'}:
         bundled = load_package(MODULE_ID, require_available=False).pack_sha256
-        if runtime_config_hash(target_configuration(client, state, runtime_config)) != journal['target_config_sha256']:
+        if runtime_config_hash(target_configuration(client, state, runtime_config, change_model=change_model or action == 'redeploy')) != journal['target_config_sha256']:
             raise AidpProvisionConflict('This maintenance operation belongs to another model configuration; use a new operation for changed configuration.')
         if bundled != journal['target_pack_sha256']:
             raise AidpProvisionConflict('This maintenance operation belongs to another bundled candidate; use a new operation for a changed package.')
@@ -702,7 +703,8 @@ def _resume_operation(client, state, action, test_session_id, runtime_config, fa
     return None
 
 
-def _prepare_operation(client, state, action, operation_id, test_session_id, runtime_config, preserve_production, factory):
+def _prepare_operation(client, state, action, operation_id, test_session_id, runtime_config, preserve_production, factory,
+                       change_model=False):
     journal = state.get('maintenance')
     resuming = journal is not None and journal['operation_id'] == operation_id
     if resuming and 'prod_snapshot' in journal and not preserve_production:
@@ -713,7 +715,7 @@ def _prepare_operation(client, state, action, operation_id, test_session_id, run
         if resuming and runtime_config_hash(runtime_config) != journal['target_config_sha256']:
             raise AidpProvisionConflict('Resume the exact saved research binding and operation.')
     if resuming:
-        return _resume_operation(client, state, action, test_session_id, runtime_config, factory)
+        return _resume_operation(client, state, action, test_session_id, runtime_config, factory, change_model)
     if journal and journal['status'] == 'running':
         raise AidpProvisionConflict('Another maintenance operation is active; resume its exact identity.')
     if action == 'rollback':
@@ -721,7 +723,7 @@ def _prepare_operation(client, state, action, operation_id, test_session_id, run
     observer = factory(client.settings)
     try:
         _begin(client, observer, state, action, operation_id, test_session_id, runtime_config,
-               preserve_production=preserve_production)
+               preserve_production=preserve_production, change_model=change_model)
     finally:
         observer.session.close()
     return None
@@ -741,7 +743,7 @@ def _advance_phase(client, native, state):
         _complete(client, native, state, phase == 'rollback_commit')
 
 
-def _admit_maintenance(client, action, operation_id, preserve_production, llm_api_key):
+def _admit_maintenance(client, action, operation_id, preserve_production, llm_api_key, select_model=False):
     """Validate the existing installation before preparing a connection under its lock."""
     verify_administrator(client)
     state = client._read_installation(str(client._workspace()['key']))
@@ -754,20 +756,25 @@ def _admit_maintenance(client, action, operation_id, preserve_production, llm_ap
         raise AidpProvisionConflict('Another maintenance operation is active; resume its exact identity.')
     resuming = journal and journal['operation_id'] == operation_id
     validate_llm_secret(state, llm_api_key)
-    if action == 'update' and not resuming and getattr(client.settings, 'llm_auth_mode', 'oci_iam') == OPENAI_MODE:
+    if action == 'update' and select_model and not resuming and getattr(client.settings, 'llm_auth_mode', 'oci_iam') == OPENAI_MODE:
         ensure_llm_credential(client, state, llm_api_key)
     return state
 
 
 def maintain(client, action, operation_id, *, test_session_id=None, max_steps=80, sleep=time.sleep, runtime_config=None,
-             preserve_production=False, native_factory=None, llm_api_key=None):
+             preserve_production=False, native_factory=None, llm_api_key=None, change_model=False):
     if action not in {'update', 'redeploy', 'rollback'} or str(UUID(operation_id)) != operation_id or not 1 <= max_steps <= 120:
         raise ValueError('Choose update/redeploy/rollback with a canonical maintenance UUID and bounded progress.')
+    if type(change_model) is not bool or change_model and (action != 'update' or runtime_config is not None):
+        raise ValueError('An explicit model change requires update without another research binding.')
     with installation_lock(client, operation_id):
-        state = _admit_maintenance(client, action, operation_id, preserve_production, llm_api_key)
+        select_model = change_model or runtime_config is not None
+        state = _admit_maintenance(client, action, operation_id, preserve_production, llm_api_key, select_model)
+        if llm_api_key is not None and not select_model:
+            raise ValueError('An OpenAI API key requires an explicit model change or research binding.')
         factory = native_factory or MarketPlaygroundClient
         result = _prepare_operation(client, state, action, operation_id, test_session_id, runtime_config,
-                                    preserve_production, factory)
+                                    preserve_production, factory, change_model)
         if result is not None:
             return result
         journal = state['maintenance']

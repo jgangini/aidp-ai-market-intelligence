@@ -1,2 +1,3 @@
 recursive-include aidp *.py *.json *.txt
 include package/lab.json
+include LICENSE README.md
