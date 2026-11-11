@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aidp-ai-market-intelligence"
-version = "0.1.2"
+version = "0.1.3"
 description = "Independent AIDP Market Intelligence TEST installer and portable agent"
 readme = "README.md"
 license = { file = "LICENSE" }

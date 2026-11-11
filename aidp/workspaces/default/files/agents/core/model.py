@@ -527,9 +527,10 @@ def _completion_body(response, sink):
 
 
 class OpenAIModelError(RuntimeError):
-    def __init__(self, status):
+    def __init__(self, status=None):
         self.status = status
-        super().__init__(f"OpenAI API key inference returned HTTP {status}")
+        super().__init__(f"OpenAI API key inference returned HTTP {status}" if status is not None
+                         else "OpenAI API key inference transport failed; usage is uncertain")
 
 
 class OpenAIModel:
@@ -576,7 +577,7 @@ class OpenAIModel:
         except httpx.TimeoutException:
             raise TimeoutError("OpenAI API key inference timed out; usage is uncertain") from None
         except httpx.RequestError:
-            raise RuntimeError("OpenAI API key inference transport failed; usage is uncertain") from None
+            raise OpenAIModelError() from None
         text = completion_text(body)
         if on_completion:
             usage = json.loads(body).get("usage", {})

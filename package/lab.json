@@ -85,7 +85,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/actor_profiles.py",
-      "sha256": "ece94f05750811152d14c8c5c709eabb4934e3bc0d806857fb6fea355c642fb9"
+      "sha256": "9800ec4cf220e4ae2077825dc6cfbf2681bac64e5e130783bfdaa699065a1ae0"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/actor_tools.py",
@@ -129,7 +129,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/decisions/understand.py",
-      "sha256": "4f809e151219d50939533a526dce9aef25dac5ff6ab5f0432db5c460fd1abf18"
+      "sha256": "c95b6850ad36f588b4361bb29a40b79aa8ae49180a483c547288f18768493128"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/decisions/verify.py",
@@ -173,7 +173,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/model.py",
-      "sha256": "3a6c754cd69bd9b5263723f0b896a01fbcce15130328d76de8f55d1a84dcf6b4"
+      "sha256": "5e4fea5c9fbfc177097c92722a46883e174694321e1af9579a3f79153e019a7c"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/model_bridge.py",
@@ -197,7 +197,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/research_contracts.py",
-      "sha256": "6d59d3a9294c75e0e8f92ea6932417d9fcadb2f2b3ef3325fe3d1497c8761f3b"
+      "sha256": "cef92371d865d34add8dbf65e45e1c8e8fce3b748116be8cee78f748172dd16c"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/runtime.json",
@@ -241,7 +241,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/workflow.py",
-      "sha256": "aec1d199aae7ef1adca649ed4a8e53c21613b6dd61c6699fbd8fb6e788e07de6"
+      "sha256": "fea839f7cdb7b62731e99720078b7158c4503edb71e429c7dcc75a2bfe99824e"
     },
     {
       "file": "aidp/workspaces/default/files/agents/market_intelligence.py",
@@ -250,6 +250,10 @@
     {
       "file": "aidp/workspaces/default/files/agents/requirements.txt",
       "sha256": "aacf9df1666b26c2c9878e56d25d131c34703dea587e9da98d4d8991b5b87560"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/periods.py",
+      "sha256": "bb79379d4725cb898d5b2c5bdce9838425ae6008fdcd4bd393bac621cf4ac722"
     }
   ],
   "source_manifests": [
@@ -266,5 +270,5 @@
       "sha256": "02d8ebfd9f19dd08b7c1b47e22137899f29fc525e208cdb88c285492e21ad477"
     }
   ],
-  "pack_sha256": "638ab4f0a359f50a1a74a7ded5a8b8fd7f0adaadff4998a162cc958f6b2d31b8"
+  "pack_sha256": "db6e5b4f7e999775d02f6ea42df8e6f6442ee853680188f8ae2c09c674ef3a07"
 }

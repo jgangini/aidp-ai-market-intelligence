@@ -396,20 +396,82 @@ def test_completed_invalid_decision_releases_the_session_for_a_new_request(tmp_p
     assert session['requests']['request-1']['finished'] and session['active'] is None
 
 
-def test_uncertain_model_failure_does_not_release_the_session_or_start_another_request(tmp_path,monkeypatch):
+@pytest.mark.parametrize('error_kind', ['timeout', 'http429', 'transport'])
+def test_uncertain_model_failure_delivers_terminal_without_releasing_or_repeating(tmp_path,monkeypatch,error_kind):
     runtime,storage,model,provider,_=market_native_fixture(tmp_path,monkeypatch)
+    errors = {'timeout': TimeoutError('Sensitive provider detail'),
+              'http429': sys.modules['core.model'].OpenAIModelError(429),
+              'transport': sys.modules['core.model'].OpenAIModelError()}
+    error = errors[error_kind]
     original=model.ask
-    async def timeout(name,schema,payload):
+    async def fail(name,schema,payload):
         if name=='market_analyze':
-            raise TimeoutError('Simulated uncertain submitted inference')
+            raise error
         return await original(name,schema,payload)
-    model.ask=timeout
-    market_native_turn(runtime)
+    model.ask=fail
+    packets=market_native_turn(runtime)
+    responses=[packet['response'] for packet in packets if packet['kind']=='response']
+    assert len(responses)==1 and responses[0]['status']=='failed'
+    assert responses[0]['failure']=={'stage':'analyze','error_type':type(error).__name__}
+    assert 'Sensitive provider detail' not in json.dumps(packets)
+    assert any(packet['kind']=='event' and packet['event']['type']=='run.failed' for packet in packets)
+    saved=[json.loads(raw) for key,(raw,_) in storage.objects.items() if key.endswith('/request.json')]
+    assert saved and saved[0]['status']=='failed'
+    effects=[json.loads(raw) for key,(raw,_) in storage.objects.items() if key.endswith('/effects.json')]
+    assert any(row['kind']=='model' and row['state']=='uncertain'
+               for ledger in effects for row in ledger['operations'].values())
     before=list(model.calls)
+    captures=list(provider.starts)
     second=market_native_turn(runtime,question='Otra investigaciÃ³n.',request_id='second')
     assert second[-1]['response']['status']=='pending' and model.calls==before
+    assert provider.starts==captures
     session=next(json.loads(raw) for key,(raw,_) in storage.objects.items() if '/sessions/' in key)
     assert session['active']['request_id']=='request-1'
+
+
+def test_original_model_failure_wins_when_another_source_reports_uncertainty_first(tmp_path,monkeypatch):
+    runtime,storage,model,provider,_=market_native_fixture(tmp_path,monkeypatch)
+    workflow=sys.modules['core.workflow'].MarketWorkflow
+    error_type=sys.modules['core.model'].OpenAIModelError
+    original_ask=model.ask
+    original_source=workflow.run_source
+    recorded=asyncio.Event()
+    release=asyncio.Event()
+
+    async def fail(name,schema,payload):
+        if name=='market_analyze':
+            raise error_type(429)
+        return await original_ask(name,schema,payload)
+
+    async def reordered(self,graph,task,writer):
+        if task['source']=='facebook':
+            try:
+                return await original_source(self,graph,task,writer)
+            except error_type:
+                recorded.set()
+                await release.wait()
+                raise
+        await recorded.wait()
+        try:
+            return await original_source(self,graph,task,writer)
+        finally:
+            asyncio.current_task().add_done_callback(lambda _:release.set())
+
+    model.ask=fail
+    monkeypatch.setattr(workflow,'run_source',reordered)
+    packets=market_native_turn(runtime)
+    response=[packet['response'] for packet in packets if packet['kind']=='response']
+    assert len(response)==1 and response[0]['status']=='failed'
+    assert response[0]['failure']=={'stage':'analyze','error_type':'OpenAIModelError'}
+    assert sum(packet['kind']=='event' and packet['event']['type']=='run.failed'
+               for packet in packets)==1
+    ledgers=[json.loads(raw) for key,(raw,_) in storage.objects.items() if key.endswith('/effects.json')]
+    assert any(row['kind']=='model' and row['state']=='uncertain'
+               for ledger in ledgers for row in ledger['operations'].values())
+    before=list(model.calls),list(provider.starts)
+    again=market_native_turn(runtime,question='Otra investigación.',request_id='second')
+    assert again[-1]['response']['status']=='pending'
+    assert (model.calls,provider.starts)==before
 
 
 def test_native_paused_model_config_is_read_without_constructing_paid_services(tmp_path,monkeypatch):

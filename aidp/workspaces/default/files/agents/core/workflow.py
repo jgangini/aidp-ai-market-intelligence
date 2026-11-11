@@ -10,12 +10,13 @@ from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from typing import TypedDict
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from . import decisions
 from .contracts import FactualReview
 from .connectors import FACEBOOK_QUERY_MAX_LENGTH, compile_keyword_query
 from .actor_tools import actor_tool_specifications
-from .model import context_limitations, evidence_context, content_units_context, content_items_context
+from .model import OpenAIModelError, context_limitations, evidence_context, content_units_context, content_items_context
 from .content_items import build_content_units, materialize_content_items
 from .media import model_evidence
 from .wire import (
@@ -363,7 +364,7 @@ class MarketWorkflow:
                             "resumable": True,
                         },
                     }
-                except (ValueError, TimeoutError) as error:
+                except (ValueError, TimeoutError, OpenAIModelError) as error:
                     await self.close_captures()
                     if name in {"bind", "deliver"}:
                         raise
@@ -475,6 +476,7 @@ class MarketWorkflow:
         )
         brief.pop("period_is_explicit")
         brief.pop("source_selection")
+        brief.pop("relative_day")
         if (
             not brief["clarification"]
             and brief["intent"] == "research"
@@ -872,15 +874,15 @@ class MarketWorkflow:
             finally:
                 self._capture_context.reset(token)
 
-    async def close_captures(self):
+    async def close_captures(self, *, cancel=True):
         self._capture_paused = True
         futures = [entry[2] for entry in self._capture_tasks.values()]
         for future in futures:
-            if not future.done():
+            if cancel and not future.done():
                 future.cancel()
-        if futures:
-            await asyncio.gather(*futures, return_exceptions=True)
+        results = await asyncio.gather(*futures, return_exceptions=True) if futures else []
         self._capture_tasks.clear()
+        return results
 
     def source_graph(self):
         from inspect import isawaitable
@@ -892,7 +894,7 @@ class MarketWorkflow:
                 try:
                     result = handler(state)
                     return await result if isawaitable(result) else result
-                except (ValueError, TimeoutError) as error:
+                except (ValueError, TimeoutError, OpenAIModelError) as error:
                     error.market_stage = name
                     raise
             return execute
@@ -934,8 +936,13 @@ class MarketWorkflow:
             self._capture_tasks[task["task_id"]] = (index, task, future)
         try:
             await asyncio.gather(*(entry[2] for entry in self._capture_tasks.values()))
-        except BaseException:
-            await self.close_captures()
+        except BaseException as error:
+            pending = isinstance(error, MarketEffectPending)
+            results = await self.close_captures(cancel=not pending)
+            if pending:
+                for result in results:
+                    if isinstance(result, Exception) and not isinstance(result, MarketEffectPending):
+                        raise result
             raise
         self._capture_tasks.clear()
         value = self.current()
@@ -1789,8 +1796,10 @@ class MarketWorkflow:
         return final
 
     @staticmethod
-    def readable_instant(value):
+    def readable_instant(value, publication_timezone=None):
         moment = market_moment(value)
+        if publication_timezone:
+            moment = moment.astimezone(ZoneInfo(publication_timezone))
         months = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
                   "agosto", "septiembre", "octubre", "noviembre", "diciembre")
         return (f"{moment.day} de {months[moment.month - 1]} de {moment.year}, "
@@ -1812,8 +1821,8 @@ class MarketWorkflow:
         }
         sources = sorted({labels[row["source"]] for row in value["evidence"].values()})
         scope = (
-            f"{period_label}: del {MarketWorkflow.readable_instant(brief['start'])} "
-            f"al {MarketWorkflow.readable_instant(brief['end'])}. "
+            f"{period_label}: del {MarketWorkflow.readable_instant(brief['start'], brief.get('publication_timezone'))} "
+            f"al {MarketWorkflow.readable_instant(brief['end'], brief.get('publication_timezone'))}. "
             f"Fuentes con evidencia: {', '.join(sources) or 'ninguna'}. "
             f"Evidencias recuperadas: {len(value['evidence'])}. "
             "El alcance se limita a estos resultados."

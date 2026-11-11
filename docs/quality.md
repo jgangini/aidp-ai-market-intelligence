@@ -13,6 +13,19 @@ y las limitaciones. Separar el tiempo de preparación o despliegue del tiempo de
 investigación. Una grabación local o una animación no reemplazan la observación de
 una transmisión nativa; un caso de una fuente no acredita todas las demás.
 
+Un fallo conocido de validación, timeout o del servicio OpenAI durante la investigación produce
+un evento de fallo y una respuesta terminal de error, después de drenar las tareas
+paralelas admitidas. El texto público no expone el mensaje privado del proveedor.
+Un fallo de transporte o un HTTP 429 no autoriza repetir efectos: los recibos inciertos
+conservan su estado y bloquean una investigación nueva en la misma sesión hasta su
+conciliación. Una cancelación del consumidor sigue propagándose como cancelación.
+Los fallos inesperados de almacenamiento, checkpoints o serialización requieren su
+propio diagnóstico; no se convierten en una respuesta de investigación aceptada.
+Si una rama detecta la incertidumbre registrada por otra antes de recibir su fallo,
+el coordinador drena las ramas ya admitidas sin cancelar la excepción originaria.
+Ese fallo conserva su diagnóstico frente al bloqueo derivado; no se repite ninguna
+llamada para resolver el orden de llegada.
+
 ## Síntesis individuales y comentarios
 
 La colección opcional se valida por separado de la síntesis de fuente: cada ficha debe
@@ -73,6 +86,19 @@ Una repetición no prueba corroboración independiente, pero tampoco autoriza af
 Las cifras conservan empresa, población, geografía, periodo, unidad, moneda y calificador. `$` por sí solo no identifica COP o USD. Una cautela de moneda puede respaldarse comprobando todo el texto suministrado; un fragmento no demuestra que el documento completo omita esa información. Una moneda explícita en otra parte del texto refuta la cautela.
 
 ## Comparar ejecuciones
+
+«Hoy» y «ayer» como periodos de publicación se calculan desde el reloj de la
+solicitud en `publication_timezone`, una zona IANA. Si el usuario no especifica
+zona, el controlador sólo la deriva del país resuelto cuando `zone.tab` contiene
+una única zona para ese país; no utiliza el país por defecto del buscador. La tabla
+se lee de los datos del sistema o del paquete `tzdata` ya disponible. Varias zonas
+o datos ausentes requieren aclaración. Los límites se convierten a UTC; hoy termina
+en el instante de la solicitud, sin incluir horas futuras. Las fechas explícitas
+no relativas y la ventana móvil de siete días conservan sus contratos.
+
+Esta política utiliza la [base IANA](https://www.iana.org/time-zones/theory) y
+[`zoneinfo` de Python](https://docs.python.org/3/library/zoneinfo.html); no mantiene
+un mapa propio de países ni reglas particulares por empresa o plataforma.
 
 Antes de evaluar recuperación, comprobar que el esquema de generación y el consumidor coincidan: restricciones de longitud, fuentes admitidas, normalización de consultas y condiciones entre campos. Las regresiones de planificación comprueban el esquema HTTP realmente enviado y los límites de `purpose` de 500/501 caracteres; un plan inválido no puede iniciar capturas. Una salida que falla antes de buscar no permite calificar los resultados del buscador.
 

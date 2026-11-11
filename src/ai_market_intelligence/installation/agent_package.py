@@ -24,6 +24,7 @@ MODULES = (
     "provider",
     "actor_tools",
     "research_contracts",
+    "periods",
     "effects",
     "passages",
     "documents",

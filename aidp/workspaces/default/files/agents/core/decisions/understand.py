@@ -5,6 +5,7 @@ from datetime import timedelta, timezone
 from ..research_contracts import MarketUnderstanding, market_moment
 from ..research_contracts import MarketReportChoice
 from ..research_contracts import MarketScheduleDraft
+from ..periods import relative_day_window
 
 UNDERSTAND_ID = "market_understand"
 UNDERSTAND_PROMPT = """Tarea
@@ -21,7 +22,7 @@ pregunta por esos asuntos. Conserva las restricciones legítimas del encargo sin
 Reglas de interpretación
 La última pregunta prevalece; usa \
 conversation_context y su tema/entidad cuando una pregunta abreviada sigue ese encargo. País e \
-idioma delimitan el alcance, no prueban hechos. Resuelve entidad, mercado, objetivo, periodo UTC y \
+idioma delimitan el alcance, no prueban hechos. Resuelve entidad, mercado, objetivo, periodo y \
 sólo fuentes habilitadas necesarias. El objetivo resume el encargo del usuario; no lo redefine. \
 Conserva su universo de productos o hechos, alternativas y restricciones explícitas, usando el \
 contexto aportado para resolver referencias omitidas. No añadas restricciones por lo que suele \
@@ -58,11 +59,17 @@ filtrados por fecha; no representa toda la plataforma ni incluye automáticament
 Usa el periodo explícito o los siete días por defecto para conversación. No conviertas una pregunta
 abierta en una queja operativa ni en una búsqueda de testimonios históricos. Una cifra o hecho
 concreto conserva su recorrido documental aunque trate de la misma entidad.
+Para hoy/ayer como día de publicación, usa relative_day=today/yesterday, period_is_explicit=true
+y start/end=null. publication_timezone contiene la zona IANA sólo si se proporcionó expresamente;
+en otro caso null. Conserva el país resuelto del mercado en search_country_code. El código resuelve
+una zona única con datos IANA y calcula los límites desde now; si hay varias zonas o faltan datos,
+solicita aclaración. No sustituyas hoy del mercado por el día UTC ni inventes una zona para un país
+con varias. Para fechas explícitas, duraciones o la ventana por defecto, relative_day=null.
 period_is_explicit indica si el usuario pidió un periodo de publicación en la pregunta o en el
 contexto al que ésta se refiere. Un periodo reciente elegido por defecto no es explícito.
 En conversation sin periodo explícito, devuelve period_is_explicit=false y start/end=null:
 el controlador calcula los siete días exactos desde now, sin redondear a medianoche.
-Si el periodo es explícito, usa period_is_explicit=true y conserva sus fechas o límites;
+Para fechas de calendario no relativas o límites explícitos, usa period_is_explicit=true y conserva esos límites;
 una fecha sin hora representa el día UTC completo. Esta selección no amplía el objetivo.
 En modos sin investigación, period_is_explicit=false.
 Sin periodo explícito, conversación admite los últimos siete días y lo declara. Respeta los límites \
@@ -167,6 +174,8 @@ def configure_contract(name, contract, payload):
 
 
 def normalize_result(name, result, payload, contract):
+    if name == UNDERSTAND_ID:
+        normalize_period(result, payload)
     if name == UNDERSTAND_ID and result.get("source_selection") == "open_conversation":
         if (result.get("intent", "research") != "research"
                 or result.get("retrieval_mode", "conversation") != "conversation"):
@@ -179,10 +188,26 @@ def normalize_result(name, result, payload, contract):
         not in contract["properties"]["intent"]["enum"]
     ):
         raise ValueError("Intake changed the explicit financial research intent")
-    if (name == UNDERSTAND_ID and result.get("period_is_explicit") is False
-            and result.get("intent", "research") == "research"
-            and result.get("retrieval_mode", "conversation") == "conversation"
-            and not result.get("clarification")):
-        captured = market_moment(payload["now"]).astimezone(timezone.utc)
-        result.update(start=(captured - timedelta(days=7)).isoformat(), end=captured.isoformat())
     return result
+
+
+def normalize_period(result, payload):
+    relative = result.get("relative_day")
+    research = (result.get("intent", "research") == "research"
+                and result.get("retrieval_mode", "conversation") == "conversation")
+    if relative is not None and (not research or result.get("period_is_explicit") is not True):
+        raise ValueError("A relative publication day requires explicit conversation research")
+    if result.get("clarification"):
+        return
+    if relative is None:
+        if research and result.get("period_is_explicit") is False:
+            captured = market_moment(payload["now"]).astimezone(timezone.utc)
+            result.update(start=(captured - timedelta(days=7)).isoformat(), end=captured.isoformat())
+        return
+    window = relative_day_window(market_moment(payload["now"]), result["relative_day"],
+                                 result.get("publication_timezone"), result.get("search_country_code"))
+    if window is None:
+        result.update(start=None, end=None, publication_timezone=None,
+                      clarification="Indica la zona horaria o una ubicación con una zona inequívoca para delimitar el día solicitado.")
+    else:
+        result.update(window)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timezone
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, field_validator, model_validator
 
@@ -40,6 +41,10 @@ class MarketBrief(Output):
     intent: Literal["research", "reuse_report", "schedule_proposal"] = "research"
     entity: Short | None
     market: Short | None
+    publication_timezone: Short | None = Field(
+        default=None,
+        description="IANA timezone explicitly supplied for the publication calendar; null lets relative-day normalization use only an unambiguous resolved market country.",
+    )
     search_country_code: Annotated[str, Field(pattern="^[A-Z]{2}$")] | None = Field(
         default=None,
         description="Two-letter Google search region for a resolved market; null retains the configured default. Not a publication geofence.",
@@ -57,6 +62,16 @@ class MarketBrief(Output):
     clarification: Short | None
     assumptions: Annotated[list[Short], Field(max_length=8)]
     retrieval_mode: Literal["documentary", "conversation", "financial"] = "conversation"
+
+    @field_validator("publication_timezone")
+    @classmethod
+    def valid_publication_timezone(cls, value):
+        if value is not None:
+            try:
+                ZoneInfo(value)
+            except (ValueError, ZoneInfoNotFoundError):
+                raise ValueError("Publication timezone must be an available IANA identifier") from None
+        return value
 
     @field_validator("start", "end")
     @classmethod
@@ -91,6 +106,10 @@ class MarketBrief(Output):
 
 
 class MarketUnderstanding(MarketBrief):
+    relative_day: Literal["today", "yesterday"] | None = Field(
+        default=None,
+        description="today or yesterday only when requested as the publication day; null for explicit dates, durations, default windows and non-research intents. The controller calculates its boundaries from now in the resolved publication timezone.",
+    )
     source_selection: Literal["targeted", "open_conversation"] = Field(
         default="targeted",
         description="open_conversation only for an open conversation/reputation request with no user source restrictions; targeted for explicit sources or other research objectives.",

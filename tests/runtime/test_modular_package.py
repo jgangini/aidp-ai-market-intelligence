@@ -116,10 +116,10 @@ def test_prompt_inventory_preserves_unchanged_text_and_reviewed_research_revisio
     from ai_market_intelligence.runtime.decisions import PROMPTS
     fixture = Path(__file__).with_name('fixtures') / 'prompt-hashes-2.0.3.json'
     expected = json.loads(fixture.read_text(encoding='utf-8'))
-    # Live D1 diagnosis changed routing, disambiguation, relevance and attribution.
+    # Pin unrelated prompts while reviewing the selected decision contracts.
     expected.update(
         market_select_sources='58896d15b6add9bef378ef50959ebe0f0221cec0779de82051f2245e86f2db9d',
-        market_understand='ab4fab90b6068f404ec006d99fffb8f6dfa0fcc3c2f477a485f2fc85e44b0db0',
+        market_understand='c6efdd50b95d02ed9acb4f11c3e14f06a19c6b94ddfe95c7314aac2232c2e74f',
         market_plan='c15c4c2d5ef0bcad50d6701b35fdf3c4f7be3efeb7510424f203288fec14cb27',
         market_analyze='229723191739b96653336c160881e046b97caae274eafecf6c817b45ef8b2514',
         market_draft='f70af5311ad7e7147f3783570155a26a747de79bd23c53a7b9db6b782e2a93cb',

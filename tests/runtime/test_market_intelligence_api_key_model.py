@@ -202,6 +202,14 @@ def test_timeout_remains_uncertain_without_retry_or_error_body(transport):
     assert len(calls) == 1 and FAKE_KEY not in str(caught.value)
 
 
+def test_network_failure_uses_known_provider_error_without_retry_or_private_message(transport):
+    calls = transport([httpx.ConnectError(FAKE_KEY)])
+    with pytest.raises(api_key_model.OpenAIModelError) as caught:
+        api_key_model.OpenAIModel(binding()["services"], FAKE_KEY).complete("s", "q", {})
+    assert caught.value.status is None
+    assert len(calls) == 1 and FAKE_KEY not in str(caught.value)
+
+
 def test_local_bridge_reuses_transport_with_counted_429_and_private_key(monkeypatch, tmp_path, transport):
     calls = transport([httpx.Response(429, text="throttled"), httpx.Response(200, json=result())])
     identity = {"tenancy": "fixture", "user": "fixture", "fingerprint": "fixture"}
