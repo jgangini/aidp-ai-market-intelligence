@@ -28,10 +28,11 @@ from .wire import (
     market_wire_line,
 )
 from .workflow import MarketWorkflow
+from .reporting import report_capabilities, validate_delivery
 
 
 def market_chat_input(text, session_id, trace_id):
-    if not isinstance(text, str) or not text.strip() or len(text) > 4096:
+    if not isinstance(text, str) or not text.strip() or len(text.encode("utf-8")) > 65536:
         raise ValueError("A bounded chat request is required")
     if text.lstrip().startswith("{"):
         value = json.loads(text)
@@ -46,14 +47,14 @@ def market_chat_input(text, session_id, trace_id):
         }
     if not isinstance(value, dict):
         raise ValueError("A chat command must be an object")
+    if "delivery" not in value and len(text) > 4096:
+        raise ValueError("A bounded chat request is required")
     return market_validate_command(value)
 
 
 def market_validate_command(value):
-    if set(value) in (
-        {"request_id", "question"},
-        {"request_id", "question", "financial_selections"},
-    ):
+    if {"request_id", "question"} <= set(value) <= {
+        "request_id", "question", "financial_selections", "delivery"}:
         if (
             not isinstance(value["question"], str)
             or not 1 <= len(value["question"].strip()) <= 500
@@ -63,6 +64,8 @@ def market_validate_command(value):
             value["financial_selections"] = market_financial_selections(
                 value["financial_selections"]
             )
+        if "delivery" in value:
+            value["delivery"] = validate_delivery(value["delivery"])
     elif set(value) not in (
         {"action", "request_id"},
         {"action", "request_id", "after_sequence"},
@@ -149,6 +152,7 @@ class MarketAgentRuntime:
                 "model_calls": 0,
                 "apify_starts": 0,
                 "business_tables_required": False,
+                "capabilities": {"report": report_capabilities()},
                 "native_argument_names": sorted(kwargs),
                 "authenticated_session_bound": bool(
                     native_config.get("configurable", {}).get("thread_id")
@@ -312,7 +316,7 @@ class MarketAgentRuntime:
             request = session.lookup(command["request_id"])
             store = self.request_store(scope, request)
             if command["action"] == "cancel":
-                store.begin(request["request_id"], request["question"])
+                store.begin(request["request_id"], request["question"], delivery=request.get("delivery"))
                 response, event = store.cancel()
                 value, _ = store.read()
                 session.finish(request["request_id"], value["brief"])
@@ -332,6 +336,7 @@ class MarketAgentRuntime:
                 command["question"],
                 binding["candidate_revision"],
                 selections=command.get("financial_selections"),
+                delivery=command.get("delivery"),
             )
         except MarketSessionPending as error:
             yield market_wire_line(
@@ -404,6 +409,7 @@ class MarketAgentRuntime:
                     {
                         "request_id": request["request_id"],
                         "question": request["question"],
+                        **({"delivery": request["delivery"]} if request.get("delivery") else {}),
                     },
                     config,
                 )

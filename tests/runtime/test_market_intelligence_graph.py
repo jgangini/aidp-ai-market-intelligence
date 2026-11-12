@@ -175,12 +175,8 @@ def test_planning_analysis_draft_review_and_final_preserve_question_and_admitted
     assert contexts[0][2]['start']=='2026-10-26T00:00:00+00:00'
 
 
-@pytest.mark.parametrize('mode,label',[
-    ('conversation','Periodo de publicaciones consultado'),
-    ('documentary','Ventana operativa de búsqueda'),
-    ('financial','Ventana operativa de búsqueda'),
-])
-def test_final_scope_is_state_owned_even_when_synthesis_omits_dates(mode,label):
+@pytest.mark.parametrize('mode',['conversation','documentary','financial'])
+def test_final_scope_is_state_owned_even_when_synthesis_omits_dates(mode):
     sources=('x','instagram') if mode=='conversation' else ('web',)
     store,model,collector,graph=market_fixture(sources)
     original=model.ask
@@ -193,17 +189,17 @@ def test_final_scope_is_state_owned_even_when_synthesis_omits_dates(mode,label):
     events,state=market_run(graph)
     text=state['response']['markdown']
     assert text.startswith('La muestra contiene reclamaciones atribuidas.')
-    assert text.count(label)==1
     brief=store.read()[0]['brief']
-    assert f"{label}: del " in text and ' UTC al ' in text
     assert brief['start'] not in text and brief['end'] not in text
     assert all(call['brief']['start']==brief['start'] and call['brief']['end']==brief['end']
                for call in collector.calls)
     if mode=='conversation':
+        assert text.count('Periodo de publicaciones consultado')==1
         assert '26 de octubre de 2026, 00:00:00 UTC al 2 de noviembre de 2026, 23:59:59 UTC' in text
-    source_names='Instagram, X' if mode=='conversation' else 'web'
-    assert f'Fuentes con evidencia: {source_names}.' in text
-    assert f'Evidencias recuperadas: {len(sources)}.' in text
+    assert 'Fuentes con evidencia:' not in text
+    assert 'Evidencias recuperadas:' not in text
+    assert 'Ventana operativa' not in text
+    assert state['response']['coverage']['evidence_count']==len(sources)
     assert ('Periodo de publicaciones consultado' in text)==(mode=='conversation')
     assert all(event['text']==text for event in events
                if event['type'] in {'draft.compacted','run.completed'})
@@ -218,8 +214,9 @@ def test_final_scope_retains_actual_retrieval_when_all_claims_are_rejected():
     events,state=market_run(graph)
     response=state['response']
     assert response['status']=='partial' and response['references']==[]
-    assert 'Fuentes con evidencia: X.' in response['markdown']
-    assert 'Evidencias recuperadas: 1.' in response['markdown']
+    assert 'Fuentes con evidencia:' not in response['markdown']
+    assert 'Evidencias recuperadas:' not in response['markdown']
+    assert response['coverage']['evidence_count']==1
     assert 'No fue posible publicar hallazgos verificados' in response['markdown']
     assert events[-1]['text']==response['markdown']
 

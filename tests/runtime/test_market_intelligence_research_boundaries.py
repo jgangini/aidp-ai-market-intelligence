@@ -453,20 +453,19 @@ def test_late_review_of_repaired_units_retains_only_newly_accepted_units(retaine
     assert response['status'] == 'partial'
     assert any(event['type'] == 'draft.corrected' for event in events)
     brief = store.read()[0]['brief']
-    label = ('Periodo de publicaciones consultado' if mode == 'conversation'
-             else 'Ventana operativa de búsqueda')
-    assert f"{label}: del " in response['markdown']
     from datetime import datetime
     for raw in (brief['start'], brief['end']):
         instant = datetime.fromisoformat(raw)
-        assert f"{instant.day} de " in response['markdown']
-        assert f"{instant.year}, {instant:%H:%M:%S} UTC" in response['markdown']
+        if mode == 'conversation':
+            assert f"{instant.day} de " in response['markdown']
+            assert f"{instant.year}, {instant:%H:%M:%S} UTC" in response['markdown']
         assert raw not in response['markdown']
     if mode != 'conversation':
         assert 'Periodo de publicaciones consultado' not in response['markdown']
         assert '2020' in brief['objective']
-    assert 'Fuentes con evidencia: web' in response['markdown']
-    assert 'Evidencias recuperadas: 2' in response['markdown']
+    assert 'Fuentes con evidencia:' not in response['markdown']
+    assert 'Evidencias recuperadas:' not in response['markdown']
+    assert response['coverage']['evidence_count'] == 2
     assert events[-1]['text'] == response['markdown']
     assert '_verified_units' not in json.dumps(response)
     from ai_market_intelligence.runtime.wire import market_replay_packet

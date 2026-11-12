@@ -16,8 +16,10 @@ from . import decisions
 from .contracts import FactualReview
 from .connectors import FACEBOOK_QUERY_MAX_LENGTH, compile_keyword_query
 from .actor_tools import actor_tool_specifications
-from .model import OpenAIModelError, context_limitations, evidence_context, content_units_context, content_items_context
+from .model import OpenAIModelError, context_limitations, context_size, evidence_context, content_units_context, content_items_context
 from .content_items import build_content_units, materialize_content_items
+from .reporting import build_report_response, validate_delivery
+from .report_analysis import platform_metrics, sentiment_units, build_sentiment, annotation_key
 from .media import model_evidence
 from .wire import (
     market_reference_manifest,
@@ -26,7 +28,7 @@ from .wire import (
     Market_TEXT_PACKET_LIMIT,
     Market_TEXT_STREAM_LIMIT,
 )
-from .runtime_core import ProviderQueryRejected, digest
+from .runtime_core import ProviderQueryRejected, digest, public_url
 from .artifacts import market_artifact_data, artifacts
 from .research_contracts import (
     MarketAnalysis,
@@ -58,6 +60,7 @@ from .collector import market_discovery_limit, market_publication_matches
 class MarketTurn(TypedDict, total=False):
     request_id: str
     question: str
+    delivery: dict
     route: str
     task: dict
     analysis: dict
@@ -432,8 +435,10 @@ class MarketWorkflow:
 
     def bind(self, state):
         self._capture_paused = False
+        delivery = validate_delivery(state["delivery"]) if "delivery" in state else None
         value = self.store.begin(
-            state["request_id"], state["question"], started_at=self.clock().isoformat()
+            state["request_id"], state["question"], started_at=self.clock().isoformat(),
+            delivery=delivery,
         )
         if value["plan"] is not None and "completed_tasks" not in value:
             self.store.save(completed_tasks=sorted(self.completed_tasks(value)))
@@ -586,6 +591,8 @@ class MarketWorkflow:
             ).model_dump(mode="json")
             for identity in ids
         }
+        if self.current().get("delivery"):
+            evidence = copy.deepcopy(prior["evidence"])
         self.store.save(evidence=evidence)
         if response.get("content_items") is not None:
             self.store.restore_content_items(response["content_items"])
@@ -680,10 +687,12 @@ class MarketWorkflow:
                 "no_new_capture": True,
             },
         }
+        if accepted:
+            final = await self.report_response(final, original=prior, summary=summary)
         self.emit(
             "run.completed",
             status="partial" if final["status"] == "partial" else "final",
-            text=final["markdown"],
+            text=summary["text"],
             evidence_ids=summary["evidence_ids"],
             artifact_ids=[a["artifact_id"] for a in artifacts],
             coverage=final["coverage"],
@@ -1808,25 +1817,12 @@ class MarketWorkflow:
     @staticmethod
     def report_text(value, text):
         brief = value["brief"]
-        period_label = (
-            "Periodo de publicaciones consultado"
-            if brief["retrieval_mode"] == "conversation"
-            else "Ventana operativa de búsqueda"
-        )
-        labels = {
-            "x": "X", "facebook": "Facebook", "instagram": "Instagram",
-            "youtube": "YouTube", "web": "web",
-            "financial_document": "documentos financieros",
-            "market_data": "datos de mercado", "world_bank": "Banco Mundial",
-        }
-        sources = sorted({labels[row["source"]] for row in value["evidence"].values()})
-        scope = (
-            f"{period_label}: del {MarketWorkflow.readable_instant(brief['start'], brief.get('publication_timezone'))} "
-            f"al {MarketWorkflow.readable_instant(brief['end'], brief.get('publication_timezone'))}. "
-            f"Fuentes con evidencia: {', '.join(sources) or 'ninguna'}. "
-            f"Evidencias recuperadas: {len(value['evidence'])}. "
-            "El alcance se limita a estos resultados."
-        )
+        scope = "El alcance se limita a los hallazgos respaldados; no representa todo el mercado."
+        if brief["retrieval_mode"] == "conversation":
+            scope = (
+                f"Periodo de publicaciones consultado: del {MarketWorkflow.readable_instant(brief['start'], brief.get('publication_timezone'))} "
+                f"al {MarketWorkflow.readable_instant(brief['end'], brief.get('publication_timezone'))}. "
+                + scope)
         if len(text) + len(scope) + 2 > 20000:
             text = (
                 "La síntesis excede el tamaño de entrega. Los hallazgos completos "
@@ -2025,6 +2021,7 @@ class MarketWorkflow:
         artifacts = self.publish_artifacts(value, "final")
         final["text"] = self.report_text(value, final["text"])
         response = self.final_response(value, final, ids, artifacts)
+        response = await self.report_response(response, summary=final)
         event_limits = response["limitations"]
         if len(event_limits) > 20:
             event_limits = [
@@ -2052,6 +2049,111 @@ class MarketWorkflow:
             final_response=response,
         )
         return {"response": response}
+
+    async def report_response(self, response, *, original=None, summary=None):
+        current = self.current()
+        delivery = current.get("delivery")
+        if not delivery or response["status"] not in {"complete", "partial"}:
+            return response
+        value = original if original is not None else current
+        template = delivery.get("template")
+        sentiment_requested = (value["brief"]["retrieval_mode"] == "conversation"
+                               and (template is None or any(section["section_id"] == "sentiment"
+                                                           for section in template["sections"])))
+        binding = digest(["report-analysis-1", value["evidence"], value["brief"],
+                          value.get("collections"), value.get("domain_outcomes"), sentiment_requested,
+                          [block for block in value.get("blocks", {}).values()
+                           if block.get("type") in {"draft.upsert", "draft.corrected"}],
+                          value.get("content_items")])
+        cached = current.get("report_analysis") or (original or {}).get("report_analysis")
+        if cached and cached.get("binding") == binding:
+            extensions = copy.deepcopy(cached["extensions"])
+        else:
+            operations = None
+            if original is None and hasattr(self.collector, "effects"):
+                effects, _ = self.collector.effects.read()
+                operations = (effects or {}).get("operations", {})
+            extensions = {"market.platform_metrics": platform_metrics(value, operations)}
+            if sentiment_requested:
+                extensions["market.sentiment"] = await self.report_sentiment(value)
+            self.store.save(report_analysis={"binding": binding, "extensions": extensions})
+        ids = set(reference["evidence_id"] for reference in response.get("references", []))
+        ids.update(identity for platform in extensions["market.platform_metrics"]["platforms"]
+                   for observation in platform["observations"] for identity in observation["evidence_ids"])
+        ids.update(annotation["evidence_id"] for group in extensions.get("market.sentiment", {}).get("groups", [])
+                   for annotation in group["annotations"])
+        response = {**response, "references": market_reference_manifest(value["evidence"], sorted(ids))}
+        report_value = {**value, "request_id": current["request_id"], "run_id": current["run_id"]}
+        return build_report_response(report_value, response, delivery, extensions=extensions, summary=summary)
+
+    async def report_sentiment(self, value):
+        units, limits = sentiment_units(value)
+        target = value["brief"]["entity"]
+        if not units:
+            return build_sentiment([], {"annotations": []}, [], target, limitations=limits)
+        context = evidence_context({"target": target, "objective": value["brief"]["objective"]}, model_evidence(units))
+        admitted = {row["evidence_id"] for row in context["evidence"]}
+        admitted_value = {**value, "evidence": {key: row for key, row in value["evidence"].items() if key in admitted}}
+        units, further_limits = sentiment_units(admitted_value)
+        limits = [*limits, *further_limits]
+        if len(units) < len(admitted):
+            limits.append("Se excluyeron comentarios cuyo contexto padre no cabía en el análisis.")
+        if context["evidence_coverage"]["omitted"]:
+            limits.append("El análisis de sentimiento se limita a los originales admitidos por el presupuesto de contexto.")
+        if not units:
+            return build_sentiment([], {"annotations": []}, [], target, limitations=limits)
+        context = evidence_context({"target": target, "objective": value["brief"]["objective"]}, model_evidence(units))
+        draft = await decisions.report_sentiment(self.ask, context)
+        build_sentiment(units, draft, [], target, limitations=limits)
+        if not draft["annotations"]:
+            return build_sentiment(units, draft, [], target, limitations=limits)
+        proposals = [{"unit_id": annotation_key(row), "annotation": row} for row in draft["annotations"]]
+        accepted = await self.review_report_sentiment(context, units, proposals)
+        return build_sentiment(units, draft, accepted, target, limitations=limits)
+
+    @staticmethod
+    def sentiment_review_context(context, originals, proposals):
+        ids = {row["annotation"]["evidence_id"] for row in proposals}
+        parents = {(row["source"], public_url(row["requested_url"])) for row in originals
+                   if row["evidence_id"] in ids and row["content_basis"] == "comment_text"}
+        rows = [row for row in originals if row["evidence_id"] in ids or
+                row["content_basis"] == "post_text" and (row["source"], public_url(row["url"])) in parents]
+        return {"target": context["target"], "objective": context["objective"],
+                "units": proposals, "evidence": model_evidence(rows)}
+
+    async def review_report_sentiment(self, context, originals, proposals):
+        batch, accepted = [], []
+        for proposal in proposals:
+            payload = self.sentiment_review_context(context, originals, [*batch, proposal])
+            if batch and context_size(payload) > 90000:
+                accepted.extend(await self.review_report_sentiment_batch(context, originals, batch))
+                batch = []
+            batch.append(proposal)
+        if batch:
+            accepted.extend(await self.review_report_sentiment_batch(context, originals, batch))
+        return accepted
+
+    async def review_report_sentiment_batch(self, context, originals, proposals):
+        payload = self.sentiment_review_context(context, originals, proposals)
+        if context_size(payload) > 90000:
+            raise ValueError("A sentiment review unit exceeds the admitted context")
+        review = await decisions.verify_report_sentiment(self.ask, payload)
+        expected = {row["unit_id"] for row in proposals}
+        actual = [row["unit_id"] for row in review["reviews"]]
+        if len(actual) != len(set(actual)) or set(actual) != expected:
+            raise ValueError("Sentiment review must cover exactly the proposed annotations")
+        original_rows = {row["evidence_id"]: row for row in originals}
+        proposed_ids = {row["unit_id"]: row["annotation"]["evidence_id"] for row in proposals}
+        accepted = []
+        for row in review["reviews"]:
+            for issue in row["issues"]:
+                original = original_rows.get(issue["evidence_id"])
+                if (issue["evidence_id"] != proposed_ids[row["unit_id"]] or original is None
+                        or issue["quoted_text"] not in original["text"]):
+                    raise ValueError("Sentiment review must quote its original evidence")
+            if row["accepted"]:
+                accepted.append(row["unit_id"])
+        return accepted
 
     async def deliver(self, state):
         await self.close_captures()

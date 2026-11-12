@@ -83,13 +83,15 @@ class MarketRunStore:
             "Concurrent request update; no external effect was started by this mutation"
         )
 
-    def begin(self, request_id, question, *, started_at=None):
+    def begin(self, request_id, question, *, started_at=None, delivery=None):
         if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
             raise ValueError("A stable authenticated request ID is required")
         if not isinstance(question, str) or not 1 <= len(question.strip()) <= 500:
             raise ValueError("A question of 1–500 characters is required")
         current, etag = self.read()
         binding = digest([request_id, question])
+        if delivery is not None:
+            binding = digest([request_id, question, delivery])
         if current is not None:
             if current["request_binding"] != binding:
                 raise ValueError(
@@ -104,6 +106,7 @@ class MarketRunStore:
             "request_id": request_id,
             "request_binding": binding,
             "question": question,
+            **({"delivery": copy.deepcopy(delivery)} if delivery is not None else {}),
             "run_id": digest(
                 [
                     self.scope.__dict__,
@@ -138,7 +141,7 @@ class MarketRunStore:
         try:
             self.snapshot.write(value, etag)
         except Conflict:
-            return self.begin(request_id, question, started_at=started_at)
+            return self.begin(request_id, question, started_at=started_at, delivery=delivery)
         return copy.deepcopy(value)
 
     def save(self, **updates):
@@ -158,6 +161,7 @@ class MarketRunStore:
             "domain_outcomes",
             "financial_facts",
             "report_selection",
+            "report_analysis",
         }
         if set(updates) - allowed:
             raise ValueError("Only reviewed request fields can be updated")

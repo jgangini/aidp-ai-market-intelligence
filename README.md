@@ -10,6 +10,7 @@ Agente de investigación de mercado para **Oracle AI Data Platform (AIDP)**, con
 - Publica progreso por fuente, cápsulas verificadas y una respuesta final mediante streaming.
 - Ofrece síntesis revisadas por publicación, página o video, con comentarios vinculados a su publicación cuando hay evidencia admitida.
 - Conserva evidencias, solicitudes y efectos externos para diagnóstico, recuperación y seguimiento de una conversación.
+- Entrega informes por tarea con plantilla estable, Markdown descargable y datos estructurados; las métricas y el sentimiento declaran muestra, procedencia y límites.
 
 Ejemplos: «¿Qué se dice de D1 en Colombia?», «¿Y en Instagram?», «Compara los ingresos reportados de estas empresas». Una fuente habilitada no garantiza resultados: el acceso, el contenido disponible y la calidad de la evidencia determinan la cobertura.
 
@@ -22,6 +23,12 @@ El proyecto incluye el agente, su paquete de distribución, una CLI administrati
 Deploy Studio permite elegir **OCI IAM** para Generative AI u **OpenAI** con su API key y modelo. Las credenciales de OpenAI y Apify se guardan por separado en Credential Store de AIDP.
 
 Un cliente compatible, como Agent Desk, consume los eventos públicos del agente. Distingue progreso, borradores sujetos a revisión y respuesta canónica; presenta los mensajes originales y conserva las referencias y las limitaciones. Los eventos identifican cada actividad y su resultado, de modo que una captura vacía, evidencia insuficiente y una fuente no disponible no se interpretan como lo mismo.
+
+La modalidad `delivery.mode="report"` utiliza el mismo arnés de investigación y
+permite transformar informes propios sin otra captura. El sentimiento se propone
+por objetivo/aspecto, se revisa por unidad y permanece sin calibración general;
+no representa la opinión de toda una población. La [operación de informes](docs/operations.md#informes-por-tarea)
+describe el contrato y su capacidad explícita, independiente del nombre del agente.
 
 ## Componentes
 

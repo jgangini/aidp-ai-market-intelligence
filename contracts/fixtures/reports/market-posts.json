@@ -1,0 +1,107 @@
+{
+  "case_id": "market-posts",
+  "synthetic": true,
+  "template_id": "market-overview",
+  "template_version": 1,
+  "evidence": [
+    {
+      "evidence_id": "post-1",
+      "source": "facebook",
+      "content_basis": "post_text",
+      "parent_evidence_id": null,
+      "text": "La atención en Mercado Faro fue excelente.",
+      "url": "https://example.com/synthetic/post-1"
+    }
+  ],
+  "extensions": {
+    "market.platform_metrics": {
+      "schema_version": "1.0",
+      "method": {
+        "method_id": "retained-evidence-counts",
+        "version": "1.0"
+      },
+      "platforms": [
+        {
+          "source": "facebook",
+          "retrieval_status": "available",
+          "query_operations": {
+            "started": 1,
+            "completed": 1,
+            "failed": 0
+          },
+          "observations": [
+            {
+              "unit": "post",
+              "status": "available",
+              "population": "retained_evidence",
+              "retained_count": 1,
+              "analyzed_count": 1,
+              "evidence_ids": [
+                "post-1"
+              ],
+              "analyzed_evidence_ids": [
+                "post-1"
+              ],
+              "limitations": []
+            },
+            {
+              "unit": "comment",
+              "status": "not_collected",
+              "population": "retained_evidence",
+              "retained_count": null,
+              "analyzed_count": null,
+              "evidence_ids": [],
+              "analyzed_evidence_ids": [],
+              "limitations": [
+                "No se obtuvo una muestra analizable de esta unidad."
+              ]
+            }
+          ],
+          "limitations": []
+        }
+      ],
+      "limitations": [
+        "Muestra sintética; no representa el universo de una plataforma."
+      ]
+    },
+    "market.sentiment": {
+      "schema_version": "1.0",
+      "method": {
+        "method_id": "target-aspect-polarity",
+        "version": "1.0",
+        "calibration_status": "not_calibrated"
+      },
+      "status": "analyzed",
+      "groups": [
+        {
+          "source": "facebook",
+          "basis": "post_text",
+          "target": "Mercado Faro",
+          "aspect": "atención",
+          "population": "retained_evidence",
+          "eligible_count": 1,
+          "classified_count": 1,
+          "unclassified_count": 0,
+          "counts": {
+            "positive": 1,
+            "negative": 0,
+            "neutral": 0,
+            "mixed": 0
+          },
+          "annotations": [
+            {
+              "evidence_id": "post-1",
+              "label": "positive",
+              "supporting_text": "La atención en Mercado Faro fue excelente.",
+              "limitations": []
+            }
+          ],
+          "limitations": []
+        }
+      ],
+      "limitations": [
+        "Clasificación sintética sin calibración del modelo."
+      ]
+    }
+  }
+}

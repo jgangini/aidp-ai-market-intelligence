@@ -118,17 +118,20 @@ def test_prompt_inventory_preserves_unchanged_text_and_reviewed_research_revisio
     expected = json.loads(fixture.read_text(encoding='utf-8'))
     # Pin unrelated prompts while reviewing the selected decision contracts.
     expected.update(
+        market_summarize='f9d7490c09caa7d7dc3eff48e2f77b3d76f2dbc48a46f8eee8b5095f7af96c3c',
         market_select_sources='58896d15b6add9bef378ef50959ebe0f0221cec0779de82051f2245e86f2db9d',
         market_understand='c6efdd50b95d02ed9acb4f11c3e14f06a19c6b94ddfe95c7314aac2232c2e74f',
         market_plan='c15c4c2d5ef0bcad50d6701b35fdf3c4f7be3efeb7510424f203288fec14cb27',
         market_analyze='229723191739b96653336c160881e046b97caae274eafecf6c817b45ef8b2514',
-        market_draft='f70af5311ad7e7147f3783570155a26a747de79bd23c53a7b9db6b782e2a93cb',
-        market_consolidate='18d3521425217a33d0a67bed6df4624a3f39bc9944911a840a16003a42cbbb4b',
+        market_draft='1ae5109eb651c045db810ac21d02a9d11cea7cc25a16d763557bf193bdcdda27',
+        market_consolidate='6f54cc7776e9eb232cda0e0357e7f1ea000f0c9c1a90dfa4ad35bb0792e88689',
         market_verify_items='4a6aff9708a2de34ff4ccae551c5c36ef1f6da49891b8544e5560c4fa9fc416c',
         # Reviewed distinction between shared predicates and thematic aggregation.
-        market_repair_units='298a3073cf4a8cfc6bda2b67995021b0417425df165954a99308381ffb8a091f',
+        market_repair_units='4d8f719e214eb57c61c6c050ee4c4234904ca655d83a99f011ea17cf6316dfb0',
         market_verify='426d743ea7224a7397f4b69b008bfa243f7d847bb63ac90542ba993bd95d5458',
         market_verify_repair='00b4cd03ef4af2571b5b9bea12e89a33cb8f113966bf399a39208dba3efd881e',
+        market_report_sentiment='1d903b35e0cc07d1c1ecf3e4650fe7633753372f557ff2a2220a82b8bf086289',
+        market_verify_report_sentiment='d8ea20b880c15fc8fa74ef30e6bc70156880b47545c8e69bcec57c768f239ad3',
     )
     assert {name: hashlib.sha256(text.encode()).hexdigest() for name, text in PROMPTS.items()} == expected
 

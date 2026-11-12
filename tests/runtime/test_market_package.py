@@ -27,7 +27,7 @@ def test_local_profile_matches_target_without_overriding_native_managed_packages
 
 def test_package_has_only_current_source_and_real_aidp_resources():
     pack = catalog.load_package('ai_market_intelligence', require_available=False)
-    assert pack.status == 'planned' and pack.pack_version == '2.1.0'
+    assert pack.status == 'planned' and pack.pack_version == '2.2.0'
     with pytest.raises(catalog.PackageError, match='not available yet'):
         catalog.load_package(pack.lab_id)
     assert not pack.datasets and not pack.notebooks and not pack.tables

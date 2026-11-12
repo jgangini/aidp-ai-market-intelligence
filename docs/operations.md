@@ -1,5 +1,62 @@
 # Operación y recuperación
 
+## Informes por tarea
+
+Una invocación JSON puede pedir una entrega estructurada del mismo agente:
+
+```json
+{"request_id":"request-1","question":"Investiga la empresa y el mercado indicados","delivery":{"mode":"report","task_id":"task-1","task_run_id":"run-1"}}
+```
+
+`question` mantiene entre 1 y 500 caracteres; las identidades de tarea admiten
+entre 1 y 128, sin controles. El JSON de informe tiene un máximo de 65.536 bytes
+UTF-8. La ausencia de `delivery` conserva el contrato y límites anteriores. La
+opción no habilita fuentes, permisos ni gasto adicionales. Se valida antes de
+reservar la solicitud; plantilla, pregunta y metadatos no pueden cambiar durante
+su recuperación. Replay y cancelación mantienen sus comandos existentes.
+
+El primer informe propone una plantilla estable de mercado, con resumen, alcance,
+hallazgos, métricas, sentimiento y limitaciones. Resumen, alcance y limitaciones
+permanecen visibles; las demás secciones pueden ser opcionales. Las siguientes
+ejecuciones pueden enviar `delivery.template` con el mismo objeto `template` de
+la respuesta: `template_id`, versión entera y secciones con `section_id`, `title`
+y `visibility`. El productor admite esas seis semánticas de sección y rechaza
+otras explícitamente. Una muestra vacía no elimina bloques de la plantilla ni
+cancela una programación. El servidor de tareas es responsable de conservar su
+versión, ocurrencias y política de concurrencia.
+
+Las respuestas `complete` o `partial` incluyen `response.report` versión `1.0` y
+Markdown ejecutivo con hallazgos respaldados, alcance, límites materiales y
+referencias de las secciones publicadas. Estado, identidades de tarea/ejecución,
+procedencia y observaciones operativas permanecen en la respuesta estructurada;
+no se repiten como narrativa comercial. `report.limitations` recoge los límites
+de la síntesis y los bloques admitidos; `response.limitations` conserva además
+los diagnósticos de cobertura y recuperación. Las métricas permanecen completas
+en las extensiones, sin tablas de diagnóstico en el Markdown. La sección opcional
+`metrics` puede no materializarse, conservando su definición de plantilla.
+`run.completed.text` sigue siendo un texto acotado de cierre; el informe completo
+es canónico en `response` y se conserva en snapshot/replay. No se amplía el límite
+de 20.000 caracteres de un evento para repetir allí todo el informe. La plantilla
+no introduce nuevas afirmaciones y sus títulos se escapan al construir Markdown.
+
+Una transformación de informe propio conserva `source_request_id`, periodo y
+observaciones originales en sus metadatos. La síntesis cita sólo la evidencia
+admitida para sus afirmaciones; las referencias adicionales de las extensiones
+no se convierten en soporte del resumen. El filtro de este agente incluye ambos extremos, por lo que
+declara `period.bounds="[start,end]"`. Un informe del consumidor sin ese campo se
+interpreta como semiabierto; no se adapta sumando segundos ni recapturando. La
+transformación puede consumir modelo, pero no nuevas capturas. Un replay del
+resultado ya guardado no repite modelo ni herramientas.
+
+`inspect_runtime` declara `capabilities.report`, sus versiones, extensiones y
+límite de entrada, sin modelos ni actores. Verificar esa declaración junto con
+`source_sha256` e `research_enabled`; el nombre del agente no demuestra soporte.
+Las extensiones opcionales `market.platform_metrics/1.0` y `market.sentiment/1.0`
+se documentan en [contratos](../contracts/README.md). Una plantilla sin sección de
+sentimiento evita esa clasificación; las investigaciones documentales/financieras
+no la activan. Otra decisión verifica las propuestas de sentimiento antes de
+agruparlas; las llamadas quedan en el ledger existente y no implican calibración.
+
 ## Texto incremental público
 
 El protocolo 2.0 utiliza sobres `event`, `response`, `snapshot` y `heartbeat`, y `kind=text` para prosa provisional. Los consumidores que validan una lista cerrada de tipos deben incorporar esta extensión antes de usar el candidato; compartir versión no vuelve compatibles a lectores antiguos que rechazan tipos desconocidos. El envelope se serializa comenzando por `{"protocol"` y termina con newline.

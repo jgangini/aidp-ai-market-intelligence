@@ -3,6 +3,7 @@
 import copy
 
 from .runtime_core import Conflict, ObjectSnapshot, digest
+from .reporting import validate_delivery
 
 
 class MarketSessionPending(RuntimeError):
@@ -47,7 +48,9 @@ class MarketSession:
             "Concurrent conversation change; no research was started by this mutation"
         )
 
-    def reserve(self, request_id, question, revision, *, selections=None):
+    def reserve(self, request_id, question, revision, *, selections=None, delivery=None):
+        delivery = validate_delivery(delivery) if delivery is not None else None
+
         def bind(value):
             existing = value["requests"].get(request_id)
             active = value["active"]
@@ -55,6 +58,7 @@ class MarketSession:
                 existing["question"] != question
                 or existing["revision"] != revision
                 or existing.get("selections") != selections
+                or existing.get("delivery") != delivery
             ):
                 raise ValueError("A request ID cannot change its question or candidate")
             if existing and existing.get("finished"):
@@ -65,17 +69,25 @@ class MarketSession:
                     or active["question"] != question
                     or active["revision"] != revision
                     or active.get("selections") != selections
+                    or active.get("delivery") != delivery
                 ):
                     raise MarketSessionPending(active["request_id"])
                 return {**active, "context": value["context"]}
             if existing:
                 return {**existing, "context": value["context"]}
+            if delivery and any(
+                (row.get("delivery") or {}).get("task_id") == delivery["task_id"]
+                and (row.get("delivery") or {}).get("task_run_id") == delivery["task_run_id"]
+                for row in value["requests"].values()
+            ):
+                raise ValueError("A task execution is already bound to another request")
             request = {
                 "request_id": request_id,
                 "question": question,
                 "revision": revision,
                 "selections": copy.deepcopy(selections),
                 "session_binding": self.binding,
+                **({"delivery": copy.deepcopy(delivery)} if delivery is not None else {}),
             }
             if len(value["requests"]) >= 1000:
                 raise ValueError(

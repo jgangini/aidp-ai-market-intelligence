@@ -105,7 +105,7 @@ def test_global_x_search_uses_one_reviewed_actor_with_window_and_limits():
 
     assert call['callOptions']['maxTotalChargeUsd'] == 0.1
 
-    assert call['callOptions']['build'] == '0.0.1060'
+    assert call['callOptions']['build'] == '0.0.1061'
 
 
 

@@ -14,6 +14,18 @@ Market Intelligence es un agente genérico de investigación de mercado en AIDP.
 
 ## Fuentes y concurrencia
 
+La entrega `report` es una presentación del mismo arnés, independiente de
+`retrieval_mode`. `core/reporting.py` valida la plantilla y construye secciones
+desde texto canónico y etiquetas revisadas; conserva las métricas como extensión
+estructurada, sin convertir el inventario recuperado en soporte del resumen ni
+añadir contadores operativos a la narrativa ejecutiva. Las implicaciones y acciones
+condicionales usan el mismo camino de redacción y verificación; el renderizador
+no inventa análisis comercial. No crea otro supervisor ni
+una investigación paralela. `core/report_analysis.py` calcula agregados y valida
+la procedencia de las unidades de análisis. El flujo conserva su verificación y
+un único cierre. La planificación remota de tareas y el renderer A2UI pertenecen
+al cliente; no forman parte de este paquete Python.
+
 | Familia | Fuentes configurables | Uso |
 | --- | --- | --- |
 | Web | `web` | Búsqueda y documentos públicos pertinentes. |

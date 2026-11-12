@@ -1,5 +1,50 @@
 # Evaluación de calidad
 
+## Contratos opcionales de informe
+
+Los [esquemas de extensiones de mercado](../contracts/README.md) describen métricas
+de muestra y sentimiento por objetivo/aspecto en un informe genérico. El productor
+liga `delivery` a solicitud y ejecución de tarea antes de admitir efectos; no
+permite cambiar plantilla o metadatos al reintentar la misma solicitud ni iniciar
+otra con el mismo `task_run_id` en esa conversación. La identidad de tarea no
+reemplaza la autenticación y el aislamiento de sesión.
+
+Los conteos se derivan de evidencia retenida y revisada, no de cifras generadas por
+el modelo. Una recaptura con texto distinto no hereda el análisis del texto viejo.
+Las propuestas de sentimiento conservan objetivo, aspecto, original y soporte
+literal; otra decisión revisa cada anotación con su propia evidencia. Las revisiones
+se dividen en lotes acotados que incluyen originales y contexto padre. Una anotación
+omitida o rechazada conserva abstención segura; ni su razón factual rechazada ni su
+polaridad reaparecen en el agregado. El método permanece `not_calibrated`.
+
+Las regresiones recorren el adaptador nativo empaquetado con proveedores simulados:
+contrato, plantilla estable, manifiesto de soporte, periodos originales, replay sin
+efectos, aislamiento, correlación y cierres largos. Los fixtures son sintéticos; no
+acreditan disponibilidad de servicios ni precisión del modelo. La aceptación de
+una instalación exige verificar el candidato servido y el consumidor. Un informe
+de otro dominio no necesita estas extensiones. JSON Schema no sustituye la revisión
+semántica ni las pruebas nativas.
+
+## Utilidad del informe ejecutivo
+
+El texto prioriza hallazgos pertinentes y respaldados. Una implicación comercial,
+oportunidad, riesgo o acción sugerida debe tener premisas verificables y conservar
+su carácter condicional; no se exige completar secciones sin evidencia. El mismo
+verificador y la reparación acotada se mantienen. Ni un estado operativo completo
+ni la similitud entre respuestas acreditan calidad comercial.
+
+La proyección separa soportes de la síntesis, bloques admitidos e inventario de las
+extensiones. Una referencia recuperada no es por sí sola pertinente ni admisible.
+Sin soporte admitido, el informe se abstiene brevemente de recomendar decisiones.
+Las unidades sin sentimiento clasificable no se interpretan como neutrales.
+
+Los controles locales cubren consejo condicional conservado, referencias de
+inventario no promovidas, material rechazado, ausencia de soporte, límites
+materiales, metadatos operativos conservados y periodos documentales/financieros
+no confundidos con la ventana de captura. Los fixtures no demuestran que un
+modelo real produzca mejores recomendaciones ni resuelven la calibración de
+pertinencia o sentimiento; esa aceptación requiere su evaluación específica.
+
 ## Aceptación de texto incremental
 
 Comprobar varios fragmentos públicos antes del cierre real del proveedor, no sólo particiones de una respuesta ya terminada. El ensayo HTTP local mantiene la conexión abierta con una barrera y exige callbacks antes de liberarla. Las regresiones cubren UTF-8 y escapes divididos, razonamiento/campos privados excluidos, refusals, herramientas, identidad de completado, finalización truncada, uso registrado y retirada de un provisional rechazado.

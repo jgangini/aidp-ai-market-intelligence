@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-market-intelligence:market.sentiment:1.0",
+  "title": "Market target/aspect sentiment 1.0",
+  "description": "Proposed optional response.report.extensions['market.sentiment'] value. Labels concern a stated target/aspect in retained text; they do not measure population opinion. Shape validation does not prove label accuracy, citation support or aggregate arithmetic.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "method", "status", "groups", "limitations"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "method": {"$ref": "#/$defs/method"},
+    "status": {"enum": ["analyzed", "insufficient", "not_applicable"]},
+    "groups": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/group"}},
+    "limitations": {"$ref": "#/$defs/limitations"}
+  },
+  "allOf": [
+    {"if": {"properties": {"status": {"const": "analyzed"}}}, "then": {"properties": {"groups": {"minItems": 1, "contains": {"properties": {"classified_count": {"minimum": 1}}}}}}},
+    {"if": {"properties": {"status": {"const": "not_applicable"}}}, "then": {"properties": {"groups": {"maxItems": 0}}}},
+    {"if": {"properties": {"status": {"enum": ["insufficient", "not_applicable"]}}}, "then": {"properties": {"limitations": {"minItems": 1}}}},
+    {"if": {"properties": {"status": {"const": "insufficient"}}}, "then": {"properties": {"groups": {"items": {"properties": {"classified_count": {"const": 0}, "counts": {"properties": {"positive": {"const": 0}, "negative": {"const": 0}, "neutral": {"const": 0}, "mixed": {"const": 0}}}}}}}}}
+  ],
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "maxLength": 500, "pattern": "\\S"},
+    "count": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "limitations": {"type": "array", "maxItems": 20, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+    "method": {
+      "type": "object", "additionalProperties": false,
+      "required": ["method_id", "version", "calibration_status"],
+      "properties": {
+        "method_id": {"const": "target-aspect-polarity"},
+        "version": {"const": "1.0"},
+        "calibration_status": {"const": "not_calibrated"}
+      }
+    },
+    "counts": {
+      "type": "object", "additionalProperties": false,
+      "required": ["positive", "negative", "neutral", "mixed"],
+      "properties": {
+        "positive": {"$ref": "#/$defs/count"},
+        "negative": {"$ref": "#/$defs/count"},
+        "neutral": {"$ref": "#/$defs/count"},
+        "mixed": {"$ref": "#/$defs/count"}
+      }
+    },
+    "annotation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["evidence_id", "label", "supporting_text", "limitations"],
+      "properties": {
+        "evidence_id": {"$ref": "#/$defs/text"},
+        "label": {"enum": ["positive", "negative", "neutral", "mixed", "unclassified"]},
+        "supporting_text": {"type": ["string", "null"], "minLength": 1, "maxLength": 1000, "pattern": "\\S"},
+        "limitations": {"$ref": "#/$defs/limitations"}
+      },
+      "allOf": [
+        {"if": {"properties": {"label": {"const": "unclassified"}}}, "then": {"properties": {"limitations": {"minItems": 1}}}, "else": {"properties": {"supporting_text": {"type": "string"}}}}
+      ]
+    },
+    "group": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source", "basis", "target", "aspect", "population", "eligible_count", "classified_count", "unclassified_count", "counts", "annotations", "limitations"],
+      "properties": {
+        "source": {"enum": ["web", "x", "facebook", "instagram", "youtube"]},
+        "basis": {"enum": ["post_text", "comment_text"]},
+        "target": {"$ref": "#/$defs/text"},
+        "aspect": {"type": ["string", "null"], "minLength": 1, "maxLength": 500, "pattern": "\\S"},
+        "population": {"const": "retained_evidence"},
+        "eligible_count": {"$ref": "#/$defs/count"},
+        "classified_count": {"$ref": "#/$defs/count"},
+        "unclassified_count": {"$ref": "#/$defs/count"},
+        "counts": {"$ref": "#/$defs/counts"},
+        "annotations": {"type": "array", "maxItems": 800, "items": {"$ref": "#/$defs/annotation"}},
+        "limitations": {"$ref": "#/$defs/limitations"}
+      }
+    }
+  }
+}

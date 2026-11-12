@@ -6,7 +6,7 @@ from ai_market_intelligence.cli import main
 def test_package_command_runs_without_credentials_or_network(capsys):
     assert main(['package-check']) == 0
     result = json.loads(capsys.readouterr().out)
-    assert result['runtime_files'] == 44 and result['deployment_surface'] == 'TEST'
+    assert result['runtime_files'] == 46 and result['deployment_surface'] == 'TEST'
     assert result['research_enabled'] is False
 
 

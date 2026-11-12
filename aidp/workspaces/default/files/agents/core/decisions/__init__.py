@@ -15,6 +15,8 @@ from .report import draft, DRAFT_ID, DRAFT_PROMPT
 from .report import consolidate, CONSOLIDATE_ID, CONSOLIDATE_PROMPT
 from .report import summarize, SUMMARIZE_ID, SUMMARIZE_PROMPT
 from .report import repair_units, REPAIR_UNITS_ID, REPAIR_UNITS_PROMPT
+from .report import report_sentiment, SENTIMENT_ID, SENTIMENT_PROMPT
+from .report import verify_report_sentiment, VERIFY_SENTIMENT_ID, VERIFY_SENTIMENT_PROMPT
 from .verify import verify, VERIFY_ID, VERIFY_PROMPT
 from .verify import verify_summary, VERIFY_SUMMARY_ID, VERIFY_SUMMARY_PROMPT
 from .verify import verify_repair, VERIFY_REPAIR_ID, VERIFY_REPAIR_PROMPT
@@ -36,10 +38,20 @@ PROMPTS = {
     VERIFY_SUMMARY_ID: VERIFY_SUMMARY_PROMPT,
     VERIFY_REPAIR_ID: VERIFY_REPAIR_PROMPT,
     VERIFY_ITEMS_ID: VERIFY_ITEMS_PROMPT,
+    SENTIMENT_ID: SENTIMENT_PROMPT,
+    VERIFY_SENTIMENT_ID: VERIFY_SENTIMENT_PROMPT,
 }
 
 
 def configure_contract(name, contract, payload, allowed_evidence=None):
+    if name == SENTIMENT_ID:
+        annotation = contract["$defs"]["SentimentAnnotation"]["properties"]
+        annotation["evidence_id"]["enum"] = [row["evidence_id"] for row in payload["evidence"]]
+        annotation["target"]["enum"] = [payload["target"]]
+    if name == VERIFY_SENTIMENT_ID:
+        identities = [unit["unit_id"] for unit in payload["units"]]
+        contract["$defs"]["ContentItemReview"]["properties"]["unit_id"]["enum"] = identities
+        contract["properties"]["reviews"].update(minItems=len(identities), maxItems=len(identities))
     if name == VERIFY_ITEMS_ID:
         identities = [unit["unit_id"] for unit in payload["units"]]
         contract["$defs"]["ContentItemReview"]["properties"]["unit_id"]["enum"] = identities
@@ -53,6 +65,8 @@ def configure_contract(name, contract, payload, allowed_evidence=None):
 
 
 def normalize_result(name, result, payload, contract):
+    if name in {SENTIMENT_ID, VERIFY_SENTIMENT_ID}:
+        return copy.deepcopy(result)
     if name in {PLAN_ID, ANALYZE_ID}:
         return research.normalize_result(name, result, payload)
     return intake.normalize_result(name, copy.deepcopy(result), payload, contract)
