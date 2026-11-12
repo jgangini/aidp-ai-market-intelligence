@@ -129,7 +129,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/decisions/understand.py",
-      "sha256": "c95b6850ad36f588b4361bb29a40b79aa8ae49180a483c547288f18768493128"
+      "sha256": "323c2ca9758028ed58010a3f68215e533559f0e331a1d5d237c987679eecb74c"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/decisions/verify.py",
@@ -278,5 +278,5 @@
       "sha256": "02d8ebfd9f19dd08b7c1b47e22137899f29fc525e208cdb88c285492e21ad477"
     }
   ],
-  "pack_sha256": "3020c41fa93249be239bd33e94d138c73c8a741836a32ba5f4fe717ac5703327"
+  "pack_sha256": "2aa825c80f92b1a192217fa3ff3bbdf0b2ae92c6ec23e45bf41949c1452e8213"
 }

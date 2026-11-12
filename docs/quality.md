@@ -141,6 +141,12 @@ o datos ausentes requieren aclaración. Los límites se convierten a UTC; hoy te
 en el instante de la solicitud, sin incluir horas futuras. Las fechas explícitas
 no relativas y la ventana móvil de siete días conservan sus contratos.
 
+Si la interpretación solicita una aclaración, la normalización temporal conserva
+esa pregunta antes de exigir compatibilidad entre el día relativo y el modo de
+búsqueda provisional. La entrega emite `clarification.required` y termina en
+`needs_clarification`, sin plan ni capturas. Una investigación sin aclaración
+sigue exigiendo que `relative_day` corresponda a conversación con periodo explícito.
+
 Esta política utiliza la [base IANA](https://www.iana.org/time-zones/theory) y
 [`zoneinfo` de Python](https://docs.python.org/3/library/zoneinfo.html); no mantiene
 un mapa propio de países ni reglas particulares por empresa o plataforma.

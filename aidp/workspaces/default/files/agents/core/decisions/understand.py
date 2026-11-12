@@ -192,13 +192,13 @@ def normalize_result(name, result, payload, contract):
 
 
 def normalize_period(result, payload):
+    if result.get("clarification"):
+        return
     relative = result.get("relative_day")
     research = (result.get("intent", "research") == "research"
                 and result.get("retrieval_mode", "conversation") == "conversation")
     if relative is not None and (not research or result.get("period_is_explicit") is not True):
         raise ValueError("A relative publication day requires explicit conversation research")
-    if result.get("clarification"):
-        return
     if relative is None:
         if research and result.get("period_is_explicit") is False:
             captured = market_moment(payload["now"]).astimezone(timezone.utc)
