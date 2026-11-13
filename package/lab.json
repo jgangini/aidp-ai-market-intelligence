@@ -181,7 +181,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/native.py",
-      "sha256": "0f09abfe88a3f1d0864fbf1225a734e66932c0e4c9e3e32a090127b6034a9c39"
+      "sha256": "887443092a15c9ce083e7e11adbde55111a2e40db57bef660f30f8418d76d06f"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/package_identity.py",
@@ -209,7 +209,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/research_contracts.py",
-      "sha256": "cef92371d865d34add8dbf65e45e1c8e8fce3b748116be8cee78f748172dd16c"
+      "sha256": "630d60fc2fe9d82fa6b25587668729734e27236fa3dbb8c1fccf6c38cedea101"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/runtime.json",
@@ -245,11 +245,11 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/state.py",
-      "sha256": "e92df29cc5628082211c3995191fb07f733ae8fe54a232452c87a30ff9f2bb24"
+      "sha256": "60f277aa2616a70b7abf6429541e823cc8925be88fe26e1d5aefed2de5acbae4"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/wire.py",
-      "sha256": "397617d15a4e7989f8eef8ceed98a3bcfa962babb5f6aa549dc642e23af371ce"
+      "sha256": "8ad4bdaf2f359c093d0e5754b36168e46b505bb71a55c48c894c0533b4c35000"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/workflow.py",
@@ -278,5 +278,5 @@
       "sha256": "02d8ebfd9f19dd08b7c1b47e22137899f29fc525e208cdb88c285492e21ad477"
     }
   ],
-  "pack_sha256": "2aa825c80f92b1a192217fa3ff3bbdf0b2ae92c6ec23e45bf41949c1452e8213"
+  "pack_sha256": "b6eb9ae8887447382a946638e56639e163a440a0a36669f2c24cfdff37006ef4"
 }

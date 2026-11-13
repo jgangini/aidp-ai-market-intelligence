@@ -209,6 +209,53 @@ cancelación. `replay` solo lee; no existe un comando operacional `resume`.
 El cliente mantiene la validación de identidad de cada flujo. Una vez terminada la solicitud,
 una pregunta igual con un identificador nuevo puede iniciar una investigación independiente.
 
+### Interrupción del transporte y propiedad de ejecución
+
+El grafo pertenece al stream de la invocación; leer un replay no crea un worker en
+segundo plano. Antes de ejecutar el grafo, el productor adquiere mediante escritura
+condicional un token privado en el mismo snapshot de la solicitud. Una segunda
+invocación del mismo ID no ejecuta otro grafo mientras exista propietario.
+
+`CancelledError` y el cierre del generador registran `interrupted` antes de drenar
+el trabajo admitido. El token permanece ocupado hasta terminar el cierre del grafo,
+las capturas y las llamadas al modelo protegidas frente a cancelación. Sólo su
+propietario puede liberarlo. Un error al persistir o cerrar conserva el bloqueo;
+no hay expiración ni apropiación automática. Una caída abrupta puede requerir
+conciliación operativa, porque no garantiza que se haya guardado la interrupción.
+
+El replay nativo y las respuestas de ejecución ocupada pueden incluir este campo
+raíz opcional, independiente de `replay.snapshot` y del cursor:
+
+```json
+{"execution":{"schema_version":"1.0","state":"interrupted","owner_held":false,"continuation_safe":true}}
+```
+
+Los estados son `ready`, `running`, `interrupted`, `waiting`, `completed`, `failed`
+y `unknown`. `owner_held` indica exclusión persistida; no demuestra que un proceso
+siga vivo. El token nunca se publica. La ausencia del campo o una versión
+desconocida no conceden permiso para continuar. `response` conserva `null` mientras
+no exista una respuesta canónica; la interrupción no fabrica un informe terminal.
+
+Un consumidor sólo puede continuar automáticamente con estado `interrupted` o
+`waiting`, propietario libre y `continuation_safe: true` booleano. Esa elegibilidad
+exige efectos terminales o exclusivamente las capturas conocidas y reintentables
+descritas arriba. Un modelo `submitted` o `uncertain` bloquea la reentrada antes de
+ejecutar el grafo. La adquisición condicional vuelve a comprobar la exclusión, por
+lo que dos consumidores que leen la misma elegibilidad no obtienen dos propietarios.
+Se conservan sesión, ID, pregunta, `delivery` y candidato originales. La continuación
+puede completar análisis pendiente; no garantiza cero llamadas nuevas al modelo.
+
+Un snapshot histórico `running` sin registro de propiedad se declara `unknown`;
+no se adopta automáticamente. Su recuperación requiere verificar y conciliar la
+invocación anterior antes de cambiar su candidato. TEST y PROD comparten este
+contrato; la superficie sólo selecciona el destino del transporte.
+
+El tratamiento sigue la propagación y limpieza descritas por
+[asyncio](https://docs.python.org/3.11/library/asyncio-task.html#task-cancellation)
+y [aclosing](https://docs.python.org/3.11/library/contextlib.html#contextlib.aclosing).
+Los [checkpoints de LangGraph](https://docs.langchain.com/oss/python/langgraph/persistence)
+conservan estado, pero no sustituyen esta propiedad de la invocación.
+
 Deploy Studio administra Terraform y llama a los hooks del paquete seleccionado. El formulario instala o reanuda; la CLI administra una instalación existente. El operador firma las solicitudes OCI. `admin_user_ocid` identifica al propietario autorizado y no sustituye la identidad firmante.
 
 Deploy Studio normaliza `Services LLM` y `Select Model` antes de Terraform. OCI IAM usa `agent_model_id`; OpenAI transmite `openai_model_id` como `agent_model_id`, con `llm_auth_mode=openai`. Los outputs y el hook comprueban que esa selección no cambió. La clave se guarda en Credential Store y el binding del agente contiene únicamente su referencia. Un modelo del catálogo requiere una prueba funcional de salida estructurada y streaming antes de aceptarse.

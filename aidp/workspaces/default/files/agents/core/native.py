@@ -4,6 +4,7 @@ from contextlib import aclosing
 import hashlib
 import json
 from pathlib import Path
+from uuid import uuid4
 
 from .memory import native_memory, root_graph_config
 from .package_identity import installed_identity
@@ -19,7 +20,7 @@ from .effects import (
 )
 from .services import build_market_services
 from .session import MarketSession, MarketSessionPending
-from .state import MarketRunStore
+from .state import MarketRunStore, MarketExecutionBusy
 from .wire import (
     market_chat_text,
     market_event_packet,
@@ -294,6 +295,26 @@ class MarketAgentRuntime:
             request["revision"],
         )
 
+    def request_effects(self, scope, request, *, prior_operations=None):
+        binding = self.config["services"]
+        return MarketEffects(
+            MarketObjectSnapshot(self.services["storage"], binding["namespace"], binding["bucket"],
+                                 scope, request["revision"], request["request_id"], "effects",
+                                 session_binding=request.get("session_binding")),
+            request["revision"], request["request_id"], prior_operations=prior_operations,
+        )
+
+    def continuation_effects_safe(self, effects):
+        value, _ = effects.read()
+        operations = (value or {}).get("operations", {}).values()
+        return all(row["state"] in {"completed", "rejected"} for row in operations) or self.capture_continuation_safe(effects)
+
+    def execution_status(self, store, effects):
+        info = store.execution_info()
+        if not info["owner_held"] and info["state"] in {"interrupted", "waiting"}:
+            info["continuation_safe"] = self.continuation_effects_safe(effects)
+        return info
+
     async def research(self, user_query, native_config, kwargs):
         binding = self.config["services"]
         session_id = native_config.get("configurable", {}).get("thread_id")
@@ -327,7 +348,8 @@ class MarketAgentRuntime:
                 )
             else:
                 yield market_replay_packet(
-                    store, request["request_id"], command.get("after_sequence", 0)
+                    store, request["request_id"], command.get("after_sequence", 0),
+                    execution=self.execution_status(store, self.request_effects(scope, request)),
                 )
             return
         try:
@@ -355,21 +377,45 @@ class MarketAgentRuntime:
             return
         store = self.request_store(scope, request)
         prior_operations = self.recovery_operations(session, scope, request)
-        effects = MarketEffects(
-            MarketObjectSnapshot(
-                self.services["storage"],
-                binding["namespace"],
-                binding["bucket"],
-                scope,
-                request["revision"],
-                request["request_id"],
-                "effects",
-                session_binding=request.get("session_binding"),
-            ),
-            request["revision"],
-            request["request_id"],
-            prior_operations=prior_operations,
-        )
+        effects = self.request_effects(scope, request, prior_operations=prior_operations)
+        value = store.begin(request["request_id"], request["question"], delivery=request.get("delivery"))
+        if value["response"] is not None:
+            if not store.execution_info()["owner_held"]:
+                self.finish_response(session, request, store, effects)
+            yield market_replay_packet(store, request["request_id"], 0,
+                                       execution=self.execution_status(store, effects))
+            return
+        owner = uuid4().hex
+        try:
+            store.acquire_execution(owner)
+        except MarketExecutionBusy:
+            yield self.execution_pending(request, store, effects)
+            return
+        if not self.continuation_effects_safe(effects):
+            store.release_execution(owner, "waiting")
+            yield self.execution_pending(request, store, effects)
+            return
+        try:
+            graph, config = self.build_research_graph(scope, session_id, native_config, session, request, store, effects)
+        except BaseException:
+            store.release_execution(owner, "failed")
+            raise
+        async with aclosing(self.research_stream(graph, config, session, request, store, effects, owner)) as stream:
+            async for text in stream:
+                yield text
+
+    def execution_pending(self, request, store, effects):
+        return market_wire_line("response", request_id=request["request_id"],
+            response={"status": "pending", "markdown": "La ejecución conserva un propietario o requiere conciliación antes de continuar.",
+                      "references": [], "artifacts": [], "resumable": True, "continuation_safe": False},
+            execution=self.execution_status(store, effects))
+
+    def close_execution(self, session, request, store, effects, owner, outcome):
+        store.release_execution(owner, outcome)
+        self.finish_response(session, request, store, effects)
+
+    def build_research_graph(self, scope, session_id, native_config, session, request, store, effects):
+        binding = self.config["services"]
         collector = MarketCollector(
             self.services["provider"],
             effects,
@@ -401,7 +447,11 @@ class MarketAgentRuntime:
         config["configurable"]["thread_id"] = digest(
             [scope.__dict__, session_id, request["request_id"]]
         )
+        return graph, config
+
+    async def research_stream(self, graph, config, session, request, store, effects, owner):
         try:
+            final = None
             async with aclosing(
                 market_stream_graph(
                     graph,
@@ -412,6 +462,8 @@ class MarketAgentRuntime:
                         **({"delivery": request["delivery"]} if request.get("delivery") else {}),
                     },
                     config,
+                    on_interrupt=lambda: store.interrupt_execution(owner),
+                    on_closed=lambda outcome: self.close_execution(session, request, store, effects, owner, outcome),
                 )
             ) as stream:
                 async for text in stream:
@@ -421,8 +473,11 @@ class MarketAgentRuntime:
                             packet["response"]["continuation_safe"] = self.capture_continuation_safe(effects)
                             text = market_wire_line("response", request_id=request["request_id"],
                                                     response=packet["response"])
-                        self.finish_response(session, request, store, effects)
-                    yield text
+                        final = text
+                    else:
+                        yield text
+            if final is not None:
+                yield final
         except MarketEffectPending as error:
             yield market_wire_line(
                 "response",

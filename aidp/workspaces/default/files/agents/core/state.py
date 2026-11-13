@@ -13,6 +13,10 @@ class MarketCancelled(RuntimeError):
     pass
 
 
+class MarketExecutionBusy(RuntimeError):
+    pass
+
+
 def market_attribution(evidence, identities):
     if any(identity not in evidence for identity in identities):
         raise ValueError(
@@ -117,6 +121,7 @@ class MarketRunStore:
             "started_at": started_at or utc_now(),
             "session_binding": getattr(self.snapshot, "session_binding", None),
             "status": "running",
+            "execution": {"state": "ready", "owner": None},
             "brief": None,
             "plan": None,
             "task_index": 0,
@@ -143,6 +148,58 @@ class MarketRunStore:
         except Conflict:
             return self.begin(request_id, question, started_at=started_at, delivery=delivery)
         return copy.deepcopy(value)
+
+    def execution_info(self):
+        value, _ = self.read()
+        execution = (value or {}).get("execution")
+        if execution is None:
+            return {"schema_version": "1.0", "state": "unknown", "owner_held": False, "continuation_safe": False}
+        return {"schema_version": "1.0", "state": execution["state"], "owner_held": execution["owner"] is not None,
+                "continuation_safe": False}
+
+    def acquire_execution(self, owner):
+        if not isinstance(owner, str) or not owner:
+            raise ValueError("Execution ownership requires a private token")
+
+        def claim(value):
+            execution = value.get("execution")
+            if (execution is None or execution["owner"] is not None
+                    or execution["state"] not in {"ready", "interrupted", "waiting"}):
+                raise MarketExecutionBusy("Research execution is owned or requires reconciliation")
+            execution.update(state="running", owner=owner)
+            if value["response"] is None:
+                value["status"] = "running"
+
+        self.transact(claim)
+
+    def interrupt_execution(self, owner):
+        def interrupt(value):
+            execution = value["execution"]
+            if execution["owner"] != owner:
+                raise Conflict("Only the admitted execution may record its interruption")
+            if value["response"] is None:
+                execution["state"] = "interrupted"
+                value["status"] = "interrupted"
+
+        self.transact(interrupt)
+
+    def release_execution(self, owner, outcome):
+        if outcome not in {"waiting", "interrupted", "failed"}:
+            raise ValueError("Unknown execution close outcome")
+
+        def release(value):
+            execution = value["execution"]
+            if execution["owner"] != owner:
+                raise Conflict("Only the admitted execution may release ownership")
+            state = "completed" if value["response"] is not None else (
+                "interrupted" if execution["state"] == "interrupted" else outcome)
+            execution.update(state=state, owner=None)
+            if state == "interrupted" and value["response"] is None:
+                value["status"] = "interrupted"
+            elif state == "waiting" and value["response"] is None and value["status"] == "running":
+                value["status"] = "pending"
+
+        self.transact(release)
 
     def save(self, **updates):
         allowed = {

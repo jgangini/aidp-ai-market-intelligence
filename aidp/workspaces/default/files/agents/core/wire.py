@@ -7,7 +7,7 @@ import json
 import re
 from urllib.parse import quote
 
-from .research_contracts import MarketEvent
+from .research_contracts import MarketEvent, MarketExecutionSummary
 from .content_items import validate_content_items
 
 
@@ -313,6 +313,7 @@ def market_wire_line(kind, **values):
     }
     if kind == "text":
         validate_text_packet(packet)
+    market_validate_execution(packet)
     market_lift_content_manifest(packet)
     market_validate_content_manifest(packet)
     text = (
@@ -322,6 +323,14 @@ def market_wire_line(kind, **values):
     if len(text.encode("utf-8")) > Market_WIRE_LIMIT:
         raise ValueError("Public wire packet exceeds its size bound")
     return text
+
+
+def market_validate_execution(packet):
+    if "execution" not in packet:
+        return
+    if packet["kind"] not in {"snapshot", "response"}:
+        raise ValueError("Invalid public execution summary")
+    MarketExecutionSummary.model_validate(packet["execution"])
 
 
 def market_reference_manifest(evidence, identities):
@@ -421,7 +430,7 @@ def market_visible_artifacts(value):
     ]
 
 
-def market_replay_packet(store, request_id, after_sequence):
+def market_replay_packet(store, request_id, after_sequence, *, execution=None):
     value, replay = store.replay_snapshot(after_sequence)
     blocks = (replay.get("snapshot") or {}).get("blocks", {}).values()
     artifacts = market_visible_artifacts(value)
@@ -455,6 +464,7 @@ def market_replay_packet(store, request_id, after_sequence):
         response=response,
         artifacts=artifacts,
         references=references,
+        **({"execution": execution} if execution is not None else {}),
         **content,
     )
 
@@ -467,6 +477,7 @@ def validate_wire_packet(packet):
         or packet.get("kind") not in {"event", "response", "snapshot", "heartbeat", "text"}
     ):
         raise ValueError("Unexpected native wire protocol")
+    market_validate_execution(packet)
     if packet["kind"] == "text":
         validate_text_packet(packet)
     else:
@@ -541,11 +552,53 @@ def market_custom_packet(store, data, request_id, *, publication=None):
     return market_wire_line("text", **values)
 
 
-async def market_stream_graph(graph, store, request, config, *, heartbeat_seconds=10):
+async def _market_drain_stream(stream, pending, interrupt):
+    async def close():
+        if pending is not None:
+            if not pending.done():
+                pending.cancel()
+            result = (await asyncio.gather(pending, return_exceptions=True))[0]
+            if isinstance(result, BaseException) and not isinstance(result, (asyncio.CancelledError, StopAsyncIteration)):
+                raise result
+        await stream.aclose()
+
+    closing = asyncio.create_task(close())
+    cancelled = False
+    while not closing.done():
+        try:
+            await asyncio.shield(closing)
+        except asyncio.CancelledError:
+            cancelled = True
+            interrupt()
+    closing.result()
+    return cancelled
+
+
+def _market_finish_stream(outcome, cancelled, notification_error, on_closed):
+    if notification_error is not None:
+        raise notification_error
+    if on_closed is not None:
+        on_closed("interrupted" if cancelled else outcome)
+    if cancelled:
+        raise asyncio.CancelledError
+
+
+async def market_stream_graph(graph, store, request, config, *, heartbeat_seconds=10,
+                              on_interrupt=None, on_closed=None):
     stream = graph.astream(request, config=config, stream_mode=["custom", "values"])
     pending = None
     response = None
     publication = {"events": {}, "content_revision": None}
+    outcome = "failed"
+    notification_error = None
+
+    def interrupt():
+        nonlocal notification_error
+        if on_interrupt is not None:
+            try:
+                on_interrupt()
+            except BaseException as error:
+                notification_error = error
     try:
         while True:
             if pending is None:
@@ -572,8 +625,11 @@ async def market_stream_graph(graph, store, request, config, *, heartbeat_second
         yield market_wire_line(
             "response", request_id=request["request_id"], response=response
         )
+        outcome = "waiting"
+    except (asyncio.CancelledError, GeneratorExit):
+        outcome = "interrupted"
+        interrupt()
+        raise
     finally:
-        if pending is not None and not pending.done():
-            pending.cancel()
-            await asyncio.gather(pending, return_exceptions=True)
-        await stream.aclose()
+        cancelled = await _market_drain_stream(stream, pending, interrupt)
+        _market_finish_stream(outcome, cancelled, notification_error, on_closed)

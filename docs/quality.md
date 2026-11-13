@@ -25,6 +25,14 @@ una instalación exige verificar el candidato servido y el consumidor. Un inform
 de otro dominio no necesita estas extensiones. JSON Schema no sustituye la revisión
 semántica ni las pruebas nativas.
 
+Las regresiones de interrupción bloquean un modelo después de una captura admitida,
+cancelan dos veces el transporte y exigen que la propiedad se mantenga hasta drenar
+su resultado. Recorren replay con cursor vigente, continuación con recibos ya
+completados, rechazo de un modelo incierto, cierre por `aclose()` y fallo de
+persistencia o limpieza. Una segunda raíz del mismo ID no puede iniciar efectos;
+una interrupción de transporte no equivale a cancelación del usuario ni a un informe
+completo. La elegibilidad observada se vuelve a comprobar al adquirir la ejecución.
+
 ## Utilidad del informe ejecutivo
 
 El texto prioriza hallazgos pertinentes y respaldados. Una implicación comercial,

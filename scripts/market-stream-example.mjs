@@ -350,12 +350,36 @@ function hideWithdrawnArtifacts(view) {
   }
 }
 
+function validateExecutionFields(value) {
+  const fields = {
+    schema_version: ['1.0'],
+    state: ['unknown', 'ready', 'running', 'interrupted', 'waiting', 'completed', 'failed'],
+    owner_held: [true, false],
+    continuation_safe: [true, false],
+  };
+  if (!value || typeof value !== 'object'
+      || canonical(Object.keys(value).sort()) !== canonical(Object.keys(fields).sort())
+      || !Object.entries(fields).every(([key, allowed]) => allowed.includes(value[key])))
+    throw new TypeError('Invalid execution recovery summary');
+}
+
+function validateExecution(packet) {
+  if (!Object.hasOwn(packet, 'execution')) return;
+  if (!['snapshot', 'response'].includes(packet.kind))
+    throw new TypeError('Invalid execution recovery summary');
+  const value = packet.execution;
+  validateExecutionFields(value);
+  if (value.continuation_safe && (value.owner_held || !['interrupted', 'waiting'].includes(value.state)))
+    throw new TypeError('Invalid execution recovery summary');
+}
+
 export function reduceMarketPacket(current, incoming) {
   const packet = structuredClone(incoming);
   if (packet?.protocol !== 'ai-market-intelligence' || packet.version !== '2.0')
     throw new TypeError('Expected a normalized public current packet');
   const turn = packet.kind === 'event' ? packet.event?.turn_id : packet.request_id;
   if (turn !== current.requestId) throw new TypeError('Packet belongs to another request');
+  validateExecution(packet);
   const view = { ...current, blocks: new Map(current.blocks), artifacts: new Map(current.artifacts),
     references: new Map(current.references), events: new Map(current.events), activity: new Map(current.activity),
     textStreams: new Map(current.textStreams), textBlocks: new Map(current.textBlocks), textPackets: new Map(current.textPackets),
@@ -401,6 +425,7 @@ export async function* readMarketPackets(readable) {
             || !['event', 'response', 'snapshot', 'heartbeat', 'text'].includes(packet.kind))
           throw new TypeError('Expected a normalized public packet');
         if (packet.kind === 'text') validateText(packet);
+        validateExecution(packet);
         yield packet;
       }
       if (encoder.encode(buffer).byteLength > maximum) throw new TypeError('Incomplete packet exceeds its size bound');

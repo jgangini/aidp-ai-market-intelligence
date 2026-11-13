@@ -20,6 +20,17 @@ const text = (phase = 'start', index = 0, fragment = '', values = {}) => envelop
   block_revision: 1, source_key: 'web', source_keys: ['web'], phase, delta_index: index,
   text: fragment, status: 'provisional', ...values });
 
+test('execution recovery summary is optional, bounded and never commits a final report', () => {
+  const packet = envelope({ kind: 'snapshot', request_id: 'request',
+    replay: { snapshot: null, events: [], cursor: 0 }, response: null,
+    execution: { schema_version: '1.0', state: 'interrupted', owner_held: false, continuation_safe: true } });
+  const initial = createMarketView('request');
+  assert.equal(reduceMarketPacket(initial, packet).final, null);
+  for (const patch of [{ owner_held: true }, { continuation_safe: 'true' },
+    { state: 'unknown' }, { schema_version: '2.0' }, { owner: 'private' }])
+    assert.throws(() => reduceMarketPacket(initial, { ...packet, execution: { ...packet.execution, ...patch } }), TypeError);
+});
+
 test('existing v2 consumer accepts presentation metadata without rewriting prose or partial status', () => {
   let view = createMarketView('fixture-request');
   for (const packet of presentationFixture) view = reduceMarketPacket(view, packet);

@@ -415,6 +415,19 @@ class MarketPresentation(Output):
     activity: MarketActivity | None = None
 
 
+class MarketExecutionSummary(Output):
+    schema_version: Literal["1.0"]
+    state: Literal["unknown", "ready", "running", "interrupted", "waiting", "completed", "failed"]
+    owner_held: Annotated[bool, Field(strict=True)]
+    continuation_safe: Annotated[bool, Field(strict=True)]
+
+    @model_validator(mode="after")
+    def safe_continuation(self):
+        if self.continuation_safe and (self.owner_held or self.state not in {"interrupted", "waiting"}):
+            raise ValueError("Execution ownership prevents automatic continuation")
+        return self
+
+
 def market_event_purpose(event_type):
     if event_type.startswith("draft."):
         return "result"
