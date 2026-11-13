@@ -85,7 +85,7 @@
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/actor_profiles.py",
-      "sha256": "8f819b823e44594cf1d064265f45970b96c75760ba129799f16b6cde9c7314aa"
+      "sha256": "2ccd8d36d3d0fef6f6aac2509b814534d23b4519a683687d816db8a4c8d64cb6"
     },
     {
       "file": "aidp/workspaces/default/files/agents/core/actor_tools.py",
@@ -278,5 +278,5 @@
       "sha256": "02d8ebfd9f19dd08b7c1b47e22137899f29fc525e208cdb88c285492e21ad477"
     }
   ],
-  "pack_sha256": "b6eb9ae8887447382a946638e56639e163a440a0a36669f2c24cfdff37006ef4"
+  "pack_sha256": "06b71e7b6142aa8230c50db2bbf52469827197eea51cb748d0f74fa5372f23aa"
 }
