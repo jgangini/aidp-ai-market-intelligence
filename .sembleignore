@@ -1,0 +1,9 @@
+.oci/
+.local/
+.aidp-local/
+.venv/
+.git/
+.codex/
+.terraform/
+dist/
+build/

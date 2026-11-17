@@ -1,0 +1,220 @@
+"""Bind Agent Flow to Oracle-managed memory without replacing or clearing it."""
+import json
+import re
+import time
+from uuid import NAMESPACE_URL, uuid5
+
+import oci
+from pydantic import SecretStr
+
+from .errors import AidpMemoryAssociationConflict, AidpProvisionConflict, AidpProvisionPending
+from .memory_receipts import accepted_receipt, intent_key, read_receipt, verify_ready
+
+
+def _password(secrets, *, required):
+    value = secrets.get('inputs', {}).get('autonomous_database_admin_password', '')
+    if not value and not required:
+        return None
+    if (not isinstance(value, str) or not 12 <= len(value) <= 30
+            or not all(re.search(pattern, value) for pattern in ('[A-Z]', '[a-z]', '[0-9]'))
+            or 'admin' in value.lower() or any(quote in value for quote in ('"', "'"))):
+        raise AidpProvisionConflict('A valid protected ADMIN password is required to create storage or enable AI.')
+    return SecretStr(value)
+
+
+def platform_details(config, signer, platform_id):
+    # Preserve optional native association fields; the public GET model does not
+    # guarantee them. Missing fields require an accepted-request receipt instead.
+    sdk = oci.ai_data_platform.AiDataPlatformClient(config, signer=signer, skip_deserialization=True,
+        timeout=(5, 20), retry_strategy=oci.retry.NoneRetryStrategy())
+    response = sdk.get_ai_data_platform(platform_id)
+    value = response.data
+    if (not isinstance(value, dict) or value.get('id') != platform_id
+            or value.get('lifecycleState') != 'ACTIVE'):
+        raise AidpProvisionConflict('The exact ACTIVE AIDP memory configuration could not be read.')
+    return value, next((v for k, v in response.headers.items() if k.lower() == 'etag'), None)
+
+
+def _association(platform, database_id, *, waiting=False):
+    status = platform.get('aiFeatureStatus')
+    if status in ('READY', 'ENABLING'):
+        association = platform.get('vectorDbId')
+        if waiting and database_id and not association:
+            return status
+        if not association or association != database_id:
+            raise AidpMemoryAssociationConflict('AIDP memory association is missing or differs from the selected database; preserve it.')
+    elif status != 'DISABLED':
+        raise AidpProvisionConflict('AIDP AI feature status is unavailable or failed; reconcile it before installation.')
+    return status
+
+
+def _database(config, signer, database_id):
+    database = oci.database.DatabaseClient(config, signer=signer).get_autonomous_database(database_id).data
+    if (database.id != database_id or database.lifecycle_state != 'AVAILABLE'
+            or database.db_version != '26ai' or database.db_workload != 'DW'):
+        raise AidpProvisionConflict('Memory requires the exact AVAILABLE Autonomous AI Lakehouse 26ai DW instance.')
+    return database
+
+
+def _etag(response):
+    value = next((v for k, v in response.headers.items() if k.lower() == 'etag'), None)
+    if not isinstance(value, str) or not value or len(value) > 1024:
+        raise AidpProvisionConflict('A memory intent cannot be changed without its exact ETag.')
+    return value
+
+
+def _rejected_attempt(saved, intent):
+    """Only a confirmed rejection of this exact binding admits another attempt."""
+    content = saved.data.content
+    if not isinstance(content, bytes) or len(content) > 4096:
+        raise AidpProvisionConflict('The existing memory intent cannot be safely read.')
+    try:
+        previous = json.loads(content)
+    except ValueError:
+        raise AidpProvisionConflict('The existing memory intent requires reconciliation.') from None
+    if (not isinstance(previous, dict) or set(previous) != {*intent, 'status', 'rejection_status', 'attempt'}
+            or any(previous.get(k) != v for k, v in intent.items())
+            or previous.get('status') != 'rejected' or previous.get('rejection_status') not in (400, 401, 403, 404, 412)
+            or type(previous.get('attempt')) is not int or not 1 <= previous['attempt'] < 1000):
+        raise AidpProvisionConflict('A memory enablement intent already exists. Reconcile it; no duplicate request was sent.')
+    return previous['attempt'] + 1
+
+
+def _reserve_intent(client, key, intent):
+    storage = client.object_storage
+    namespace, bucket = client.settings.objectstorage_namespace, client.settings.artifacts_bucket_name
+    body = json.dumps({**intent, 'status': 'submitted', 'attempt': 1}, sort_keys=True, separators=(',', ':')).encode()
+    try:
+        return _etag(storage.put_object(namespace, bucket, key, body, if_none_match='*', content_type='application/json')), 1
+    except oci.exceptions.ServiceError as exc:
+        if exc.status != 412:
+            raise
+    saved = storage.get_object(namespace, bucket, key)
+    attempt = _rejected_attempt(saved, intent)
+    body = json.dumps({**intent, 'status': 'submitted', 'attempt': attempt}, sort_keys=True, separators=(',', ':')).encode()
+    return _etag(storage.put_object(namespace, bucket, key, body, if_match=_etag(saved), content_type='application/json')), attempt
+
+
+def _selected_database(fields):
+    """Normalize the same exclusive destination in preflight and post-apply."""
+    mode = fields.get('autonomous_database_mode')
+    if mode not in ('new', 'existing'):
+        raise AidpProvisionConflict('Choose new or existing Autonomous memory storage.')
+    if fields.get('lifecycle_action', 'install') != 'install' and mode != 'existing':
+        raise AidpProvisionConflict('Maintenance cannot create or replace memory storage.')
+    database_id = fields.get('existing_autonomous_database_ocid', '')
+    if mode == 'existing':
+        if not isinstance(database_id, str) or not re.fullmatch(r'ocid1\.autonomousdatabase\.[^\s]+', database_id):
+            raise AidpProvisionConflict('Select the exact existing Autonomous database.')
+    elif database_id:
+        raise AidpProvisionConflict('New memory storage cannot carry an existing database selection.')
+    elif fields.get('autonomous_database_version') != '26ai' or fields.get('autonomous_database_workload') != 'DW':
+        raise AidpProvisionConflict('New Agent Flow memory requires the 26ai DW profile.')
+    return mode, database_id
+
+
+def preflight_memory(context, secrets, config, signer):
+    fields = context['inputs']
+    mode, database_id = _selected_database(fields)
+    if mode == 'existing':
+        _database(config, signer, database_id)
+    status = 'DISABLED'
+    if fields['aidp_mode'] == 'existing':
+        platform, _ = platform_details(config, signer, fields['existing_ai_data_platform_ocid'])
+        status = _association(platform, database_id)
+    _password(secrets, required=mode == 'new' or status == 'DISABLED')
+    return {'name': 'Agent Flow memory', 'status': 'passed',
+            'message': ('Existing native memory association verified; no replacement or SQL wallet required.'
+                        if status == 'READY' else 'Memory destination validated; native AI enablement is checked after apply.')}
+
+
+def _memory_destination(client, context, outputs):
+    """Validate the Terraform reference and its live database ownership together."""
+    fields = context['inputs']
+    mode, selected_id = _selected_database(fields)
+    database_id = outputs.get('autonomous_database_id', '')
+    owned = mode == 'new'
+    if (not isinstance(database_id, str) or not re.fullmatch(r'ocid1\.autonomousdatabase\.[^\s]+', database_id)
+            or outputs.get('owned_autonomous_database') is not owned
+            or (not owned and database_id != selected_id)):
+        raise AidpProvisionConflict('Terraform memory identity or ownership changed before installation.')
+    config = {**client._oci_config, 'region': context['region']}
+    database = _database(config, client.signer, database_id)
+    if owned and (database.compartment_id != client.settings.compartment_id
+                  or (database.freeform_tags or {}).get('deployment_binding') != outputs['deployment_binding']):
+        raise AidpProvisionConflict('New memory database does not belong to this deployment.')
+    return config, database_id
+
+
+def _enable_memory(client, config, secrets, intent, etag):
+    """Reserve one durable request and record definite rejections for safe recovery."""
+    platform_id, database_id = intent['platform_id'], intent['database_id']
+    credential = _password(secrets, required=True)
+    key = intent_key(platform_id)
+    # Record intent before a call that may time out after being accepted. A lost
+    # response is reconciled through READY + exact association, never another POST.
+    intent_etag, attempt = _reserve_intent(client, key, intent)
+    sdk = oci.ai_data_platform.AiDataPlatformClient(config, signer=client.signer)
+    try:
+        response = sdk.enable_ai_feature(platform_id, oci.ai_data_platform.models.EnableAiFeatureDetails(
+            vector_db_id=database_id, vector_db_admin_cred=credential.get_secret_value()),
+            if_match=etag, opc_retry_token=str(uuid5(NAMESPACE_URL, 'aidp-market-memory:' + intent['operation_id'] + ':' + database_id + ':' + str(attempt))),
+            retry_strategy=oci.retry.NoneRetryStrategy())
+    except oci.exceptions.ServiceError as exc:
+        if exc.status in (400, 401, 403, 404, 412):
+            rejected = {**intent, 'status': 'rejected', 'rejection_status': exc.status, 'attempt': attempt}
+            client.object_storage.put_object(client.settings.objectstorage_namespace,
+                client.settings.artifacts_bucket_name, key,
+                json.dumps(rejected, sort_keys=True, separators=(',', ':')).encode(),
+                if_match=intent_etag, content_type='application/json')
+            raise
+        if exc.status != 409:
+            raise
+        return None
+    return accepted_receipt(client, intent, intent_etag, attempt, response)
+
+
+def _wait_for_memory(client, config, intent, platform, etag, receipt):
+    platform_id, database_id = intent['platform_id'], intent['database_id']
+    fresh_request = receipt is not None
+    sdk = oci.ai_data_platform.AiDataPlatformClient(config, signer=client.signer,
+        timeout=(5, 20), retry_strategy=oci.retry.NoneRetryStrategy())
+    deadline = time.monotonic() + 900
+    while True:
+        status = _association(platform, database_id, waiting=True)
+        if status == 'READY':
+            if platform.get('vectorDbId') == database_id:
+                return database_id
+            if receipt is None:
+                receipt = read_receipt(client, intent)
+            if receipt is None:
+                raise AidpMemoryAssociationConflict('The selected memory association has no accepted request receipt.')
+            if verify_ready(client, sdk, intent, receipt, etag, fresh_request=fresh_request):
+                return database_id
+        remaining = deadline - time.monotonic()
+        if status not in ('ENABLING', 'READY') or remaining <= 0:
+            raise AidpProvisionPending('AI memory enablement is still running or unverified; preserve the deployment.', 'memory')
+        time.sleep(min(5, remaining))
+        if time.monotonic() >= deadline:
+            raise AidpProvisionPending('AI memory enablement is still running; preserve the deployment.', 'memory')
+        platform, etag = platform_details(config, client.signer, platform_id)
+
+
+def ensure_memory(client, context, secrets, outputs, operation):
+    config, database_id = _memory_destination(client, context, outputs)
+    platform_id = client.settings.aidp_platform_id
+    platform, etag = platform_details(config, client.signer, platform_id)
+    status = _association(platform, database_id, waiting=True)
+    intent = {'schema_version': 1, 'platform_id': platform_id, 'database_id': database_id,
+              'operation_id': operation, 'deployment_binding': outputs['deployment_binding']}
+    if status == 'READY' and platform.get('vectorDbId') == database_id:
+        return database_id
+    if status in ('ENABLING', 'READY'):
+        return _wait_for_memory(client, config, intent, platform, etag, None)
+    if context['inputs'].get('lifecycle_action', 'install') != 'install':
+        raise AidpProvisionConflict('Maintenance cannot enable or change platform memory.')
+    if not etag:
+        raise AidpProvisionConflict('AIDP memory enablement requires the current platform ETag.')
+    receipt = _enable_memory(client, config, secrets, intent, etag)
+    platform, etag = platform_details(config, client.signer, platform_id)
+    return _wait_for_memory(client, config, intent, platform, etag, receipt)

@@ -1,0 +1,97 @@
+{
+  "case_id": "market-ambiguous",
+  "synthetic": true,
+  "template_id": "market-overview",
+  "template_version": 1,
+  "evidence": [
+    {
+      "evidence_id": "post-ambiguous",
+      "source": "facebook",
+      "content_basis": "post_text",
+      "parent_evidence_id": null,
+      "text": "Mercado Faro, vaya tela...",
+      "url": "https://example.com/synthetic/post-ambiguous"
+    }
+  ],
+  "extensions": {
+    "market.platform_metrics": {
+      "schema_version": "1.0",
+      "method": {
+        "method_id": "retained-evidence-counts",
+        "version": "1.0"
+      },
+      "platforms": [
+        {
+          "source": "facebook",
+          "retrieval_status": "available",
+          "query_operations": {
+            "started": 1,
+            "completed": 1,
+            "failed": 0
+          },
+          "observations": [
+            {
+              "unit": "post",
+              "status": "available",
+              "population": "retained_evidence",
+              "retained_count": 1,
+              "analyzed_count": 1,
+              "evidence_ids": [
+                "post-ambiguous"
+              ],
+              "analyzed_evidence_ids": [
+                "post-ambiguous"
+              ],
+              "limitations": []
+            }
+          ],
+          "limitations": []
+        }
+      ],
+      "limitations": [
+        "Muestra sintética; no representa el universo de una plataforma."
+      ]
+    },
+    "market.sentiment": {
+      "schema_version": "1.0",
+      "method": {
+        "method_id": "target-aspect-polarity",
+        "version": "1.0",
+        "calibration_status": "not_calibrated"
+      },
+      "status": "insufficient",
+      "groups": [
+        {
+          "source": "facebook",
+          "basis": "post_text",
+          "target": "Mercado Faro",
+          "aspect": null,
+          "population": "retained_evidence",
+          "eligible_count": 1,
+          "classified_count": 0,
+          "unclassified_count": 1,
+          "counts": {
+            "positive": 0,
+            "negative": 0,
+            "neutral": 0,
+            "mixed": 0
+          },
+          "annotations": [
+            {
+              "evidence_id": "post-ambiguous",
+              "label": "unclassified",
+              "supporting_text": "Mercado Faro, vaya tela...",
+              "limitations": [
+                "Expresión ambigua; no se asigna polaridad."
+              ]
+            }
+          ],
+          "limitations": []
+        }
+      ],
+      "limitations": [
+        "Texto ambiguo; no se asigna polaridad."
+      ]
+    }
+  }
+}

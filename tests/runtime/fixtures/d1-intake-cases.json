@@ -1,0 +1,89 @@
+[
+  {
+    "id": "d1-intake",
+    "input": {
+      "request_id": "d1-intake",
+      "question": "que se dice de d1 en colombia"
+    },
+    "stop_before": "plan",
+    "expected_nodes": [
+      "bind",
+      "understand"
+    ],
+    "require_model_call": true,
+    "assertions": [
+      {
+        "path": "route",
+        "equals": "plan"
+      }
+    ],
+    "trace_boundaries": true,
+    "clock_at": "2026-11-08T03:15:31+00:00"
+  },
+  {
+    "id": "d1-planning",
+    "input": {
+      "request_id": "d1-planning",
+      "question": "que se dice de d1 en colombia"
+    },
+    "stop_before": "collect",
+    "expected_nodes": [
+      "bind",
+      "understand",
+      "plan"
+    ],
+    "require_model_call": true,
+    "assertions": [
+      {
+        "path": "route",
+        "equals": "collect"
+      }
+    ],
+    "trace_boundaries": true,
+    "clock_at": "2026-11-08T03:15:31+00:00"
+  },
+  {
+    "id": "ara-planning-heldout",
+    "input": {
+      "request_id": "ara-planning-heldout",
+      "question": "que se dice de ara en colombia"
+    },
+    "stop_before": "collect",
+    "expected_nodes": [
+      "bind",
+      "understand",
+      "plan"
+    ],
+    "require_model_call": true,
+    "assertions": [
+      {
+        "path": "route",
+        "equals": "collect"
+      }
+    ],
+    "trace_boundaries": true,
+    "clock_at": "2026-11-08T03:15:31+00:00"
+  },
+  {
+    "id": "d1-store-count-control",
+    "input": {
+      "request_id": "d1-store-count-control",
+      "question": "cuantas tiendas tiene D1 en Colombia"
+    },
+    "stop_before": "collect",
+    "expected_nodes": [
+      "bind",
+      "understand",
+      "plan"
+    ],
+    "require_model_call": true,
+    "assertions": [
+      {
+        "path": "route",
+        "equals": "collect"
+      }
+    ],
+    "trace_boundaries": true,
+    "clock_at": "2026-11-08T03:15:31+00:00"
+  }
+]

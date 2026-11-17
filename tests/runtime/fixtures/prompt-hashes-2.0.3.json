@@ -1,0 +1,16 @@
+{
+  "market_understand": "a3dcfc6a4b2d1eaab109a357856725384ac2e7fbcdb15c213c1a7d4793c0bee9",
+  "market_plan": "c4c39b56bbe8d9cd642fa9dc1308103fa25b67bc1c5cf56b6c0cfbfaa32f1049",
+  "market_analyze": "d02938a953ad41e10fe43336180853ff8873ccebe0bb6cd0381272d47d6351e6",
+  "market_draft": "181b819b1acc20e96a722415b46f44e842fd5806456944b88e39f15defb4ad86",
+  "market_verify": "fdf623a6d39d2f75edb9d17bcc0bc01f677c9eaa87a6b4ce5a288fc4557aaf15",
+  "market_consolidate": "d7116763650feb9ac6a5f349637c95efb68b9da81060c837ad0e9c0fbc17e3e6",
+  "market_summarize": "963867ea1991cce20effbe5fc8fce88aea070ed8fe7eee945391070ec98fe7ac",
+  "market_verify_summary": "2d3e90ce0a129f9cc0c0291fd57ec15e6033b6f20c1612215fce0c8e0e7c5d2d",
+  "market_select_sources": "8eced0603c89bd8d70c4457908b9b02a368ed895d05c1a9c9b824db211c66ac5",
+  "market_extract_proposal": "da19a46367d23a33fa890f775d22007177415715c4796a8af060791dccfa8801",
+  "market_select_report": "6da853d66bf8af937516533b1a8bb87205d54887ece1550a9feb962fef344ef5",
+  "market_repair_units": "194eb126f3ababc13f65493ec91b9604ca150eacfd8aa4b5b2396e7e29563a9a",
+  "market_verify_repair": "6dd490e57163665d2c70b987bcefc8cb4646bca426219d7485192b0ba6dcd69c",
+  "market_select_passages": "d53ac9f694c154db5a4396cb1adb8152860e3a4a11ca447e497f609696ee5ed0"
+}

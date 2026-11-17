@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-market-intelligence:market.platform_metrics:1.0",
+  "title": "Market platform metrics 1.0",
+  "description": "Proposed optional response.report.extensions['market.platform_metrics'] value. Counts concern retained evidence, not the universe of a platform. Cross-field totals and evidence ownership require producer validation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "method", "platforms", "limitations"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "method": {"$ref": "#/$defs/method"},
+    "platforms": {"type": "array", "maxItems": 8, "items": {"$ref": "#/$defs/platform"}},
+    "limitations": {"$ref": "#/$defs/limitations"}
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "maxLength": 500, "pattern": "\\S"},
+    "count": {"type": ["integer", "null"], "minimum": 0, "maximum": 9007199254740991},
+    "limitations": {"type": "array", "maxItems": 20, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+    "method": {
+      "type": "object", "additionalProperties": false,
+      "required": ["method_id", "version"],
+      "properties": {"method_id": {"const": "retained-evidence-counts"}, "version": {"const": "1.0"}}
+    },
+    "operations": {
+      "description": "One population of ledger-recorded query attempts: started includes pre-run rejections, completed means a verified successful query result including valid empty results, and failed includes rejected starts, failed runs or unavailable results. completed + failed <= started. These are not counts of created Actor runs. Excludes polling, dataset reads and model calls. Null means unverified accounting; failure or uncertainty is not an empty successful search.",
+      "type": "object", "additionalProperties": false,
+      "required": ["started", "completed", "failed"],
+      "properties": {
+        "started": {"$ref": "#/$defs/count"},
+        "completed": {"$ref": "#/$defs/count"},
+        "failed": {"$ref": "#/$defs/count"}
+      }
+    },
+    "observations": {
+      "description": "Retained unique evidence units after scope/period filtering. Not raw provider rows, references cited in prose, distinct people, or independent corroboration. Analyzed units need an admitted analysis, not just a successful collection.",
+      "type": "object", "additionalProperties": false,
+      "required": ["unit", "status", "population", "retained_count", "analyzed_count", "evidence_ids", "analyzed_evidence_ids", "limitations"],
+      "properties": {
+        "unit": {"enum": ["post", "comment", "page"]},
+        "status": {"enum": ["available", "empty", "not_collected", "unavailable", "partial", "pending"]},
+        "population": {"const": "retained_evidence"},
+        "retained_count": {"$ref": "#/$defs/count"},
+        "analyzed_count": {"$ref": "#/$defs/count"},
+        "evidence_ids": {"type": "array", "maxItems": 800, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+        "analyzed_evidence_ids": {"type": "array", "maxItems": 800, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+        "limitations": {"$ref": "#/$defs/limitations"}
+      },
+      "allOf": [
+        {"if": {"properties": {"status": {"const": "not_collected"}}}, "then": {"properties": {"retained_count": {"type": "null"}, "analyzed_count": {"type": "null"}, "evidence_ids": {"maxItems": 0}, "analyzed_evidence_ids": {"maxItems": 0}}}},
+        {"if": {"properties": {"status": {"const": "empty"}}}, "then": {"properties": {"retained_count": {"const": 0}, "analyzed_count": {"const": 0}, "evidence_ids": {"maxItems": 0}, "analyzed_evidence_ids": {"maxItems": 0}}}}
+      ]
+    },
+    "platform": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source", "retrieval_status", "query_operations", "observations", "limitations"],
+      "properties": {
+        "source": {"enum": ["web", "x", "facebook", "instagram", "youtube", "financial_document", "market_data", "world_bank"]},
+        "retrieval_status": {"enum": ["available", "empty", "not_queried", "partial", "pending", "provider_failed"]},
+        "query_operations": {"$ref": "#/$defs/operations"},
+        "observations": {"type": "array", "maxItems": 3, "items": {"$ref": "#/$defs/observations"}},
+        "limitations": {"$ref": "#/$defs/limitations"}
+      }
+    }
+  }
+}

@@ -1,0 +1,282 @@
+{
+  "schema_version": 1,
+  "lab_id": "ai_market_intelligence",
+  "display_name": "AI Market Intelligence",
+  "pack_version": "2.2.0",
+  "status": "planned",
+  "kind": "global_module",
+  "scope": "global",
+  "installation_modes": [
+    "laboratory",
+    "production"
+  ],
+  "datasets": [],
+  "notebooks": [],
+  "tables": {},
+  "formats": {},
+  "expected_results": {
+    "installation": {
+      "business_tables_required": false,
+      "research_enabled": false,
+      "scheduled": false,
+      "deployment_surface": "TEST",
+      "semantic_accepted": false
+    }
+  },
+  "agent": {
+    "name": "ai_market_intelligence",
+    "memory": "AIDP_SESSION_AND_OBJECT_STORAGE",
+    "streaming": "graph_milestones",
+    "graphs": "optional",
+    "card": {
+      "name": "ai_market_intelligence",
+      "description": "On-demand evidence-based market research with authenticated AIDP sessions and conditional Object Storage ledgers. The installed agent stays paused on TEST until native acceptance; no automatic scheduled dispatch or visual charts are enabled.",
+      "version": "2.2.0",
+      "capabilities": {
+        "isStreaming": true
+      },
+      "skills": [
+        {
+          "id": "approved_market_research",
+          "name": "Research approved market sources",
+          "description": "Investigate a company or market within an explicit time window and approved source and budget scope. Contrast retrieved evidence, preserve citations and limitations, and return a partial report when coverage is insufficient. Supports reviewed web, X, World Bank and daily financial-history adapters; does not claim complete social coverage.",
+          "tags": [
+            "market-research",
+            "evidence",
+            "approved-sources"
+          ],
+          "examples": [
+            "Investiga las novedades de D1 en Colombia en los ultimos siete dias usando las fuentes aprobadas."
+          ]
+        },
+        {
+          "id": "stored_report_followup",
+          "name": "Explain stored research",
+          "description": "Answer follow-up questions using the report and evidence already recovered. Can summarize or show comparable data as a table without starting another paid extraction. Does not promise a rendered visual chart.",
+          "tags": [
+            "reports",
+            "follow-up",
+            "evidence"
+          ],
+          "examples": [
+            "Resume el informe anterior en dos frases sin hacer otra extraccion."
+          ]
+        },
+        {
+          "id": "registered_topic_sources",
+          "name": "List registered topic sources",
+          "description": "List active source destinations registered for the authenticated user and canonical topic. Distinguish discovery scope and suspended adapters. This reads the catalog; interpretation uses the configured model and does not run Apify Actors.",
+          "tags": [
+            "sources",
+            "catalog",
+            "read-only"
+          ],
+          "examples": [
+            "Que fuentes y destinos tengo registrados para el tema actual?"
+          ]
+        }
+      ]
+    }
+  },
+  "runtime_files": [
+    {
+      "file": "aidp/workspaces/default/files/agents/core/__init__.py",
+      "sha256": "ee9007280cae8826e7baeb0d48fe5c439adfe935e62d84208900ecc6fa059e59"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/actor_profiles.py",
+      "sha256": "2ccd8d36d3d0fef6f6aac2509b814534d23b4519a683687d816db8a4c8d64cb6"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/actor_tools.py",
+      "sha256": "f77cbec346928ecdc86c443fb495e7c120cd97f1a6c482604f9677f1652b98d0"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/artifacts.py",
+      "sha256": "707c818e9d33182477ba18be28879e091da8340d49246fba8473f6c6dc7fca74"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/collector.py",
+      "sha256": "609a4ebe95257b615174c7f4d6211cfb279196a9c35cf74fe4a7cf20d791bcc4"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/config.py",
+      "sha256": "57217375a87b0dc67ad128b8555e8dafab49fc3b341f83311c6159dd90a32b97"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/connectors.py",
+      "sha256": "6f9ee99b9e2632bcc16b4b9efa7d2d8ed5045b46597df06e6b36a754c25f072a"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/content_items.py",
+      "sha256": "65249a2c621c54b031146e26e49c87790b4ba2bb8605fbd41a482bbf72d8c31d"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/contracts.py",
+      "sha256": "eca35503d5769dc39092720acf4cbb2818673a348a70c1894a08b49d770ace8a"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/decisions/__init__.py",
+      "sha256": "94983b446aa9462c1dcd2f24c63c773b60af84f2c13912f06837dec88f17f1d4"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/decisions/report.py",
+      "sha256": "f00177f75e98dc90fae7b4b058739bfd8200d2626b1e2452071631fd8d8349c7"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/decisions/research.py",
+      "sha256": "2b70a8a0a6105caa03eb57e41ff1920f0d0d298d5f33ba5824147f8493ac86f2"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/decisions/understand.py",
+      "sha256": "323c2ca9758028ed58010a3f68215e533559f0e331a1d5d237c987679eecb74c"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/decisions/verify.py",
+      "sha256": "5138746f6bbe7e993ba2f184425ea96f36b5e013665f2260fe44a67123cda6cd"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/documents.py",
+      "sha256": "b51f06eec83bd2b8365ada81bfd5a49118b41497a1fa35722647c65306194a3b"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/effects.py",
+      "sha256": "5db9ad4c6d8a0f779d0ccf655ce634a02fb39d36228b2ee2b805d9b788ff45a4"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/factory.py",
+      "sha256": "c00335502dc73ec5c3fc7bd029e8a2033240fa39ce4bd123b3c53809e52c31ed"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/finance.py",
+      "sha256": "6e5f231b4b63055de126015572b714313b7443b268fdfd2edea371df94ea3e40"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/financial.py",
+      "sha256": "c9de069db281d25cf2329ad2758c1b185400ad48d423f458b62351b8da6ecdb0"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/mcp_payload.py",
+      "sha256": "b989851696f7794aeae00b3f361384c0615b584d8f982412275e3edcc7dfb950"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/mcp_tools.json",
+      "sha256": "4ca3419dc96b7177e3d07099139e74f85a1264bec464e61d7633e3e0fb49a8a1"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/media.py",
+      "sha256": "0f855bf5eec3928d31672cdb95d050f93f97478f6821ee95e72c0f620e0845fc"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/memory.py",
+      "sha256": "c8c4ba3a2d6ad0efa23088a7a261090ee652ba18250dda1123dbb7f615671e98"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/model.py",
+      "sha256": "5e4fea5c9fbfc177097c92722a46883e174694321e1af9579a3f79153e019a7c"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/model_bridge.py",
+      "sha256": "6cf41e5a5c7521f95f0d93a854cae7419e42ee27f74246e7fe1d34895ffa48db"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/native.py",
+      "sha256": "887443092a15c9ce083e7e11adbde55111a2e40db57bef660f30f8418d76d06f"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/package_identity.py",
+      "sha256": "1d3c8d4fcb2cbac2ae879f18eedf205da7ff328f52e35538c981705d12ced28f"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/passages.py",
+      "sha256": "0bee7a3e7abda05e20310963866ce0787928e6bc9670b0e5c51ed3fe76aeec9c"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/periods.py",
+      "sha256": "bb79379d4725cb898d5b2c5bdce9838425ae6008fdcd4bd393bac621cf4ac722"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/provider.py",
+      "sha256": "91dea1706f6cec5e4b334eab2d0735a532f5a09dd0550db05174bbc7ad10c8e7"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/report_analysis.py",
+      "sha256": "7b948dd9dc42bb7a9fb35750071eda7021ad390e2254b9670381952d27c12fa9"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/reporting.py",
+      "sha256": "09d0bdf78fe45fd3b8527ce9143fd52bf05a1a64786397e83e1488e04dcac7d5"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/research_contracts.py",
+      "sha256": "630d60fc2fe9d82fa6b25587668729734e27236fa3dbb8c1fccf6c38cedea101"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/runtime.json",
+      "sha256": "5bac87d0ffcb56319f3ed8ce764dc9b03c07c195807794e306291a3bca760282"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/runtime_core.py",
+      "sha256": "08c46488764077f0d0df65af58a268d19633198461341cbd683377d603c57877"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/runtime_versions.py",
+      "sha256": "7b6b8eedc1bf3eedb4266d3a2fe8cdb811cb0b2a986e3e500add7ad0ee86d0ba"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/serp.py",
+      "sha256": "c2bb2343a896dec7c11eb38c6e3c05af27e23b951dbf7682837eb996917b1dfc"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/services.py",
+      "sha256": "66f904611f62ab074d9c41fa5f58fbb3dd3b3d4491a4ff716da5f7e23a797cc1"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/session.py",
+      "sha256": "793409db5bc819c4fc3b14b8e55fe83f70e5b322e01906317ff871317ea50f91"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/social.py",
+      "sha256": "62331b8a334c89178f9dd51e11cb4bde81ff9289252c290dcb373369414b2627"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/social_search.py",
+      "sha256": "8af1f71340b968b40067ea4502953167d9ff4b9cc8178ea61fe895342cdde75e"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/state.py",
+      "sha256": "60f277aa2616a70b7abf6429541e823cc8925be88fe26e1d5aefed2de5acbae4"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/wire.py",
+      "sha256": "8ad4bdaf2f359c093d0e5754b36168e46b505bb71a55c48c894c0533b4c35000"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/core/workflow.py",
+      "sha256": "3d15ae85920689a954118a38e31bb4f9868d6a778295f00d9686ec0de2316dcb"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/market_intelligence.py",
+      "sha256": "7915e5da99e3cbf815fc17c9f9656ff862d8086d07e31eb0f57975f65980a42b"
+    },
+    {
+      "file": "aidp/workspaces/default/files/agents/requirements.txt",
+      "sha256": "aacf9df1666b26c2c9878e56d25d131c34703dea587e9da98d4d8991b5b87560"
+    }
+  ],
+  "source_manifests": [
+    {
+      "file": "aidp/manifest.json",
+      "sha256": "2a3becc4c7c17b2add441ac61d56d04ed1e663978e0f4839cf387aee708165e8"
+    },
+    {
+      "file": "aidp/workspaces/default/agent_flow/agents/ai_market_intelligence.json",
+      "sha256": "dd1d68e0a5d13b5de98ba26f2055b5400c55b77277b7566e709f6dc9d9339735"
+    },
+    {
+      "file": "aidp/workspaces/default/agent_flow/compute/ai_market_intelligence.json",
+      "sha256": "02d8ebfd9f19dd08b7c1b47e22137899f29fc525e208cdb88c285492e21ad477"
+    }
+  ],
+  "pack_sha256": "06b71e7b6142aa8230c50db2bbf52469827197eea51cb748d0f74fa5372f23aa"
+}

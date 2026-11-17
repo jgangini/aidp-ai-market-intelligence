@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Project-supported Sentrux 0.5.7 rules",
+  "type": "object",
+  "additionalProperties": false,
+  "anyOf": [
+    {
+      "required": [
+        "constraints"
+      ]
+    },
+    {
+      "required": [
+        "boundaries"
+      ]
+    }
+  ],
+  "properties": {
+    "constraints": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "min_quality": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "min_modularity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "min_acyclicity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "min_depth": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "min_equality": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "min_redundancy": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "max_coupling_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "max_cycles": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "max_cc": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "max_file_lines": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "max_fn_lines": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "max_upward_violations": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "no_god_files": {
+          "type": "boolean"
+        }
+      }
+    },
+    "boundaries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "string",
+            "minLength": 1
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
