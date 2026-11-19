@@ -26,8 +26,8 @@ def social_call(platform,urls=None):
 
 def test_social_compilers_use_reviewed_actors_and_keep_unlimited_spend_explicit():
     facebook,instagram=social_call('facebook'),social_call('instagram')
-    assert facebook['actor']=='apify/facebook-posts-scraper' and facebook['callOptions']['build']=='0.0.408'
-    assert instagram['actor']=='apify/instagram-post-scraper' and instagram['callOptions']['build']=='0.0.650'
+    assert facebook['actor']=='apify/facebook-posts-scraper' and facebook['callOptions']['build']=='0.0.422'
+    assert instagram['actor']=='apify/instagram-post-scraper' and instagram['callOptions']['build']=='0.0.683'
     assert 'maxTotalChargeUsd' not in facebook['callOptions'] and 'maxTotalChargeUsd' not in instagram['callOptions']
     assert facebook['input']['captionText'] is False
     assert instagram['input']['dataDetailLevel']=='basicData' and instagram['input']['includeMusicData'] is False

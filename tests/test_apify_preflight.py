@@ -59,8 +59,7 @@ def test_all_canonical_profiles_use_exact_actor_and_build_without_starting_runs(
     expected = ['/v2/users/me']
     for profile in PROFILES.values():
         if not profile.get('unavailable_reason'):
-            expected += ['/v2/actors/' + profile['actor_id'], '/v2/actor-builds/' + profile['build_id']
-                         if 'build_id' in profile else '/v2/actors/' + profile['actor_id'] + '/builds']
+            expected += ['/v2/actors/' + profile['actor_id'], '/v2/actor-builds/' + profile['build_id']]
     assert [request.url.path for request in requests] == expected
     assert result['account'] == {'status': 'authenticated'}
     assert result['reads_verified'] is True and result['apify_starts'] == 0

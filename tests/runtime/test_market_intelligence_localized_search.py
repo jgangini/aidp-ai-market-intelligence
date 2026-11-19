@@ -94,7 +94,7 @@ def test_compiler_pins_reviewed_actor_localization_dates_and_cost_without_affect
 
         'countryCode': 'CO', 'languageCode': 'es', 'dateFrom': '2026-10-25', 'dateTo': '2026-11-01'},
 
-        'waitSecs': 0, 'callOptions': {'build': '0.0.21', 'memory': 1024, 'timeout': 120,
+        'waitSecs': 0, 'callOptions': {'build': '0.0.29', 'memory': 1024, 'timeout': 120,
 
                                     'maxItems': 3, 'maxTotalChargeUsd': 0.05}}
 
@@ -206,7 +206,7 @@ def test_serp_normalization_is_metadata_only_with_original_provider_and_capture_
 
     assert audit['query'] == ARGS['query'] and audit['source'] == 'apify/web-search'
 
-    assert audit['actor_build'] == '0.0.21'
+    assert audit['actor_build'] == '0.0.29'
 
     assert audit['provider_run_id'] == RECEIPT['runId'] and audit['position'] == 1
 

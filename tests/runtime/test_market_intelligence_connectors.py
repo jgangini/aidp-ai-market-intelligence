@@ -105,7 +105,7 @@ def test_global_x_search_uses_one_reviewed_actor_with_window_and_limits():
 
     assert call['callOptions']['maxTotalChargeUsd'] == 0.1
 
-    assert call['callOptions']['build'] == '0.0.1062'
+    assert call['callOptions']['build'] == '0.0.1068'
 
 
 
@@ -179,7 +179,7 @@ def test_youtube_search_uses_one_term_three_videos_and_no_paid_addons(sort, expe
 
     assert call['actor'] == 'streamers/youtube-scraper' and call['waitSecs'] == 0
 
-    assert call['callOptions'] == {'build': '0.0.322', 'memory': 1024, 'timeout': 120,
+    assert call['callOptions'] == {'build': '0.0.335', 'memory': 1024, 'timeout': 120,
 
                                    'maxItems': 3, 'maxTotalChargeUsd': 0.05}
 
